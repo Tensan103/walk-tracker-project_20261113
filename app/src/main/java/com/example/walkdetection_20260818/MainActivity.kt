@@ -252,7 +252,7 @@ fun SensorLoggerScreen() {
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-
+/*
         Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(text = "加速度センサー", style = MaterialTheme.typography.titleMedium)
@@ -261,7 +261,7 @@ fun SensorLoggerScreen() {
                 Text(text = "Z軸: ${String.format("%.2f", accelValues[2])}")
             }
         }
-
+*/
         Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(text = "累計歩数 (STEP_DETECTOR)", style = MaterialTheme.typography.titleMedium)
@@ -270,7 +270,7 @@ fun SensorLoggerScreen() {
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-
+/*
         // --- R2: ファイル名用の任意の文字列入力 ---
         OutlinedTextField(
             value = fileSuffixText,
@@ -297,5 +297,6 @@ fun SensorLoggerScreen() {
             Spacer(modifier = Modifier.height(16.dp))
             Text(text = "保存先: \n$logFilePath", style = MaterialTheme.typography.bodySmall)
         }
+ */
     }
 }
