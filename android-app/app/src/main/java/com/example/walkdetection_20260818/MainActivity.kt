@@ -39,7 +39,12 @@ import java.io.FileWriter
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.*
-
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
 class MainActivity : ComponentActivity() {
 
     private val requestPermissionLauncher =
@@ -94,6 +99,9 @@ fun SensorLoggerScreen() {
     var walkingTimeoutJob by remember { mutableStateOf<Job?>(null) } // アラート解除タイマー用ジョブ
 
     var writer by remember { mutableStateOf<BufferedWriter?>(null) }
+
+    // APIのURLを定義（CDKのOutputsのApiUrlに "/events" を付けたもの）
+    val awsApiUrl = "https://4ss98ipt4m.execute-api.ap-northeast-3.amazonaws.com/prod/events";
 
     // ログを書き込む関数（R1: 引数に currentSteps を追加）
     fun writeLog(type: String, eventTimestampNs: Long, values: FloatArray, currentSteps: Int) {
@@ -191,6 +199,11 @@ fun SensorLoggerScreen() {
                                 if (!isWalkingAlert) {
                                     isWalkingAlert = true
                                     Toast.makeText(context, "歩行検知", Toast.LENGTH_SHORT).show()
+
+                                    // ★ここで「検知」をAWSに送信 (コルーチン内で非同期実行)
+                                    coroutineScope.launch {
+                                        sendWalkingEventToAWS(awsApiUrl, "DETECT")
+                                    }
                                 }
                             }
 
@@ -202,6 +215,9 @@ fun SensorLoggerScreen() {
                                 delay(T_SEC * 1000L) // 5秒待機
                                 isWalkingAlert = false // 5秒間新しい歩行がなければアラート消去
                                 stepTimestamps.clear() // リストもリセット
+
+                                // ★T秒経過したら「解除」をAWSに送信
+                                sendWalkingEventToAWS(awsApiUrl, "RELEASE")
                             }
                         }
                     }
@@ -298,5 +314,34 @@ fun SensorLoggerScreen() {
             Text(text = "保存先: \n$logFilePath", style = MaterialTheme.typography.bodySmall)
         }
  */
+    }
+}
+private val okHttpClient = OkHttpClient()
+
+suspend fun sendWalkingEventToAWS(apiUrl: String, category: String) {
+    withContext(Dispatchers.IO) {
+        try {
+            val jsonObject = JSONObject().apply {
+                put("deviceId", "pixel-7a-test") // 今は固定文字列
+                put("category", category)        // "DETECT" か "RELEASE"
+                put("timestamp", System.currentTimeMillis())
+            }
+
+            val requestBody = jsonObject.toString().toRequestBody("application/json".toMediaType())
+            val request = Request.Builder()
+                .url(apiUrl)
+                .post(requestBody)
+                .build()
+
+            okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.e("AWS_API", "API Error: ${response.code}")
+                } else {
+                    Log.d("AWS_API", "送信成功: $category")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("AWS_API", "通信例外: ${e.message}")
+        }
     }
 }
