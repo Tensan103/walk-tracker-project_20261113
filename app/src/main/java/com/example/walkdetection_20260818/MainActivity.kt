@@ -231,7 +231,7 @@ fun SensorLoggerScreen() {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(modifier = Modifier.height(16.dp))
-        Text(text = "センサーロガー", style = MaterialTheme.typography.headlineMedium)
+        Text(text = "歩行検知デモ", style = MaterialTheme.typography.headlineMedium)
 
         Spacer(modifier = Modifier.height(16.dp))
 
