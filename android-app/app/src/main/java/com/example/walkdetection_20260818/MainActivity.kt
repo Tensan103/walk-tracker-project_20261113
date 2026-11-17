@@ -1,7 +1,4 @@
-package com.example.walkdetection_20260818  // ← ★この1行（ご自身のプロジェクトのパッケージ名）を一番上に追加！
-// ★ご注意：1行目の package com.example.ご自身のプロジェクト名 は残してください！
-
-// ★ご注意：1行目の package com.example.ご自身のプロジェクト名 は残してください！
+package com.example.walkdetection_20260818
 
 import android.Manifest
 import android.content.Context
@@ -28,23 +25,24 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.io.BufferedWriter
-import java.io.File
-import java.io.FileWriter
-import java.io.IOException
-import java.text.SimpleDateFormat
-import java.util.*
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import java.io.BufferedWriter
+import java.io.File
+import java.io.FileWriter
+import java.io.IOException
+import java.text.SimpleDateFormat
+import java.util.*
+import kotlin.time.Duration.Companion.seconds
+
 class MainActivity : ComponentActivity() {
 
     private val requestPermissionLauncher =
@@ -81,12 +79,12 @@ fun SensorLoggerScreen() {
     val coroutineScope = rememberCoroutineScope()
 
     // --- パラメータ設定 ---
-    val T_SEC = 5 // T秒
-    val S_STEPS = 3 // S歩
+    val tSec = 5 // T秒
+    val sSteps = 3 // S歩
 
     // --- 状態管理 ---
     var isRecording by remember { mutableStateOf(false) }
-    var accelValues by remember { mutableStateOf(FloatArray(3) { 0f }) }
+    var accelValues by remember { mutableStateOf(FloatArray(3)) }
     var stepCount by remember { mutableIntStateOf(0) }
     var logFilePath by remember { mutableStateOf("") }
 
@@ -101,7 +99,7 @@ fun SensorLoggerScreen() {
     var writer by remember { mutableStateOf<BufferedWriter?>(null) }
 
     // APIのURLを定義（CDKのOutputsのApiUrlに "/events" を付けたもの）
-    val awsApiUrl = "https://4ss98ipt4m.execute-api.ap-northeast-3.amazonaws.com/prod/events";
+    val awsApiUrl = "https://4ss98ipt4m.execute-api.ap-northeast-3.amazonaws.com/prod/events"
 
     // ログを書き込む関数（R1: 引数に currentSteps を追加）
     fun writeLog(type: String, eventTimestampNs: Long, values: FloatArray, currentSteps: Int) {
@@ -119,6 +117,7 @@ fun SensorLoggerScreen() {
         }
     }
 
+    @Suppress("unused")
     fun toggleRecording() {
         if (!isRecording) {
             try {
@@ -146,7 +145,7 @@ fun SensorLoggerScreen() {
 
                 writeLog("TOGGLE_ON", System.nanoTime(), floatArrayOf(0f, 0f, 0f), stepCount)
 
-            } catch (e: IOException) {
+            } catch (_: IOException) {
                 Toast.makeText(context, "ファイルの作成に失敗しました", Toast.LENGTH_SHORT).show()
             }
         } else {
@@ -158,7 +157,7 @@ fun SensorLoggerScreen() {
                     writer?.flush()
                     writer?.close()
                     writer = null
-                } catch (e: IOException) {}
+                } catch (_: IOException) {}
             }
             Toast.makeText(context, "記録を終了しました", Toast.LENGTH_SHORT).show()
         }
@@ -192,10 +191,10 @@ fun SensorLoggerScreen() {
                             stepTimestamps.add(currentTimeMs)
 
                             // T秒(5000ミリ秒)より古いデータをリストから削除
-                            stepTimestamps.removeAll { currentTimeMs - it > (T_SEC * 1000) }
+                            stepTimestamps.removeAll { currentTimeMs - it > (tSec * 1000) }
 
                             // S歩(3歩)以上カウントされたか判定
-                            if (stepTimestamps.size >= S_STEPS) {
+                            if (stepTimestamps.size >= sSteps) {
                                 if (!isWalkingAlert) {
                                     isWalkingAlert = true
                                     Toast.makeText(context, "歩行検知", Toast.LENGTH_SHORT).show()
@@ -212,7 +211,7 @@ fun SensorLoggerScreen() {
 
                             // 新しくT秒後にアラートを解除するタイマーをセット
                             walkingTimeoutJob = coroutineScope.launch {
-                                delay(T_SEC * 1000L) // 5秒待機
+                                delay(tSec.seconds) // 5秒待機
                                 isWalkingAlert = false // 5秒間新しい歩行がなければアラート消去
                                 stepTimestamps.clear() // リストもリセット
 
@@ -237,7 +236,7 @@ fun SensorLoggerScreen() {
                 try {
                     writer?.flush()
                     writer?.close()
-                } catch (e: IOException) {}
+                } catch (_: IOException) {}
             }
         }
     }
@@ -316,6 +315,7 @@ fun SensorLoggerScreen() {
  */
     }
 }
+
 private val okHttpClient = OkHttpClient()
 
 suspend fun sendWalkingEventToAWS(apiUrl: String, category: String) {
