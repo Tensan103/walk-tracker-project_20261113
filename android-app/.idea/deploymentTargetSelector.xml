@@ -15,10 +15,10 @@
       </SelectionState>
       <SelectionState runConfigName="androidTest">
         <option name="selectionMode" value="DROPDOWN" />
-        <DropdownSelection timestamp="2026-11-17T20:21:36.427352Z">
+        <DropdownSelection timestamp="2026-11-18T16:07:50.554431Z">
           <Target type="DEFAULT_BOOT">
             <handle>
-              <DeviceId pluginId="LocalEmulator" identifier="path=C:\Users\tensa\.android\avd\Pixel_7a.avd" />
+              <DeviceId pluginId="LocalEmulator" identifier="path=C:\Users\tensa\.android\avd\Pixel_7a_3.avd" />
             </handle>
           </Target>
         </DropdownSelection>
