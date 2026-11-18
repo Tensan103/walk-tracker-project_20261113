@@ -1,65 +1,54 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { EventsPage } from './pages/EventsPage';
+import { DevicesPage } from './pages/DevicesPage';
 
-// DynamoDBから返ってくるデータの型
-type WalkEvent = {
-  deviceId: string;
-  timestamp: number;
-  category: string;
-};
+type Tab = 'events' | 'devices';
+
+const TABS: { id: Tab; label: string }[] = [
+  { id: 'events',  label: '歩行検知ダッシュボード' },
+  { id: 'devices', label: 'デバイス管理' },
+];
+
+// API Gateway のベース情報 (参照用)
+// BackendStack.ApiUrl = https://4ss98ipt4m.execute-api.ap-northeast-3.amazonaws.com/prod/
+// BackendStack.CloudFrontUrl = https://d2c7vkr5tsw06w.cloudfront.net
 
 function App() {
-  const [events, setEvents] = useState<WalkEvent[]>([]);
-
-  // CDK出力の "ApiUrl" に "/events" を追加
-  const API_URL = "https://4ss98ipt4m.execute-api.ap-northeast-3.amazonaws.com/prod/events";
-  // Outputs:
-  // BackendStack.ApiUrl = https://4ss98ipt4m.execute-api.ap-northeast-3.amazonaws.com/prod/
-  // BackendStack.CloudFrontUrl = https://d2c7vkr5tsw06w.cloudfront.net
-  // BackendStack.WalkEventsApiEndpoint083EAA71 = https://4ss98ipt4m.execute-api.ap-northeast-3.amazonaws.com/prod/
-  // Stack ARN:
-  // arn:aws:cloudformation:ap-northeast-3:704243371083:stack/BackendStack/dbf5b330-e2b0-11f1-a4cf-0e91d5596fc1
-
-  const fetchEvents = async () => {
-    try {
-      const response = await fetch(API_URL);
-      const data = await response.json();
-      setEvents(data);
-    } catch (error) {
-      console.error("Failed to fetch data:", error);
-    }
-  };
-
-  useEffect(() => {
-    fetchEvents();
-  }, []);
+  const [activeTab, setActiveTab] = useState<Tab>('events');
 
   return (
-    <div style={{ padding: '20px', fontFamily: 'sans-serif' }}>
-      <h2>歩行検知ダッシュボード</h2>
-      <button onClick={fetchEvents} style={{ marginBottom: '10px' }}>
-        最新データに更新
-      </button>
+    <div style={{ padding: '20px', fontFamily: 'sans-serif', maxWidth: '1200px', margin: '0 auto' }}>
+      <h1 style={{ fontSize: '20px', margin: '0 0 16px', color: '#1a1a1a' }}>
+        Walk Tracker 管理画面
+      </h1>
 
-      <table border={1} cellPadding={8} style={{ borderCollapse: 'collapse', width: '100%' }}>
-        <thead>
-          <tr style={{ backgroundColor: '#f0f0f0' }}>
-            <th>デバイスID</th>
-            <th>イベント</th>
-            <th>検知日時 (JST)</th>
-          </tr>
-        </thead>
-        <tbody>
-          {events.map((ev, index) => (
-            <tr key={index}>
-              <td>{ev.deviceId}</td>
-              <td style={{ color: ev.category === 'DETECT' ? 'red' : 'blue' }}>
-                {ev.category === 'DETECT' ? '歩行開始 (DETECT)' : '待機に戻る (RELEASE)'}
-              </td>
-              <td>{new Date(ev.timestamp).toLocaleString('ja-JP')}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {/* タブナビゲーション */}
+      <nav style={{ display: 'flex', borderBottom: '2px solid #e0e0e0', marginBottom: '20px' }}>
+        {TABS.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            style={{
+              padding: '10px 20px',
+              border: 'none',
+              cursor: 'pointer',
+              backgroundColor: 'transparent',
+              borderBottom: activeTab === tab.id ? '2px solid #1976D2' : '2px solid transparent',
+              marginBottom: '-2px',
+              color: activeTab === tab.id ? '#1976D2' : '#666',
+              fontWeight: activeTab === tab.id ? 600 : 400,
+              fontSize: '14px',
+              transition: 'color 0.15s',
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </nav>
+
+      {/* ページコンテンツ */}
+      {activeTab === 'events'  && <EventsPage />}
+      {activeTab === 'devices' && <DevicesPage />}
     </div>
   );
 }
