@@ -1,5 +1,7 @@
 *.js
 !jest.config.js
+# Lambda handlers are plain JS and must be tracked
+!lambda/*.js
 *.d.ts
 node_modules
 
