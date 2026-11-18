@@ -102,3 +102,98 @@ When implementing a feature that spans the stack:
 1. **[High]** Android Foreground Service — keep sensors and API calls alive when screen is off.
 2. **[Medium]** Amazon Cognito auth — secure API Gateway, add login to the React dashboard.
 3. **[Low]** DynamoDB schema optimization — GSI for time-range queries, device-to-user mapping.
+
+## Files and Directories to Ignore
+
+Unless explicitly requested by the user, do not inspect, search, index, or analyze the following files and directories:
+
+### Node.js / TypeScript artifacts
+
+- **/node_modules/**
+- **/dist/**
+- **/coverage/**
+- **/.vite/**
+- **/.npm/**
+
+### Android build artifacts
+
+- **android-app/.gradle/**
+- **android-app/build/**
+- **android-app/app/build/**
+- **android-app/.cxx/**
+- **android-app/captures/**
+
+### AWS CDK artifacts
+
+- **backend/cdk.out/**
+- **backend/.cdk.staging/**
+
+### Infrastructure artifacts
+
+- **/.terraform/**
+- **/*.tfstate**
+- **/*.tfstate.backup**
+
+### Generated files
+
+- **/*.apk**
+- **/*.aab**
+- **/*.jar**
+- **/*.class**
+- **/*.so**
+- **/*.dex**
+
+### Logs
+
+- **/*.log**
+- **npm-debug.log***
+- **yarn-error.log***
+
+### Cache directories
+
+- **/.cache/**
+- **/.tmp/**
+- **/tmp/**
+
+### Lock files
+
+Read package lock files only when dependency investigation is required:
+
+- package-lock.json
+- yarn.lock
+- pnpm-lock.yaml
+
+### Exceptions
+
+The following locations are considered source code and should always be preferred:
+
+- android-app/app/src/**
+- backend/bin/**
+- backend/lib/**
+- backend/lambda/**
+- admin-web-viewer/src/**
+- docs/**
+
+Ignore generated outputs even if they contain copies of source code.
+
+## Search Strategy
+
+When investigating an issue:
+
+1. Start from the smallest relevant sub-project.
+2. Avoid repository-wide searches unless the issue spans multiple components.
+3. Prefer targeted file reads over recursive directory scans.
+4. Read only files directly related to the task.
+
+## Secrets and Credentials
+
+Never read, print, modify, commit, or expose credentials from:
+
+- .env
+- .env.*
+- *.pem
+- *.key
+- ~/.aws/credentials
+- ~/.aws/config
+
+Use placeholders when discussing secrets.
