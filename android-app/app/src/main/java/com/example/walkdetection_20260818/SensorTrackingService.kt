@@ -441,15 +441,19 @@ class SensorTrackingService : Service() {
 
         val wm = getSystemService(WINDOW_SERVICE) as WindowManager
         val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            WindowManager.LayoutParams.MATCH_PARENT, // 画面いっぱいに広げる場合
+            WindowManager.LayoutParams.MATCH_PARENT, // 縦はコンテンツの高さ
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, // ←★これが必要！
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or // ★裏のアプリの操作を妨げないようにするフラグ
+                    WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
             y = 120
         }
+
+        // 表示位置の設定（例：画面上部に出す）
+        params.gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
 
         val view = TextView(this).apply {
             text = "🚶 歩行検知！"
