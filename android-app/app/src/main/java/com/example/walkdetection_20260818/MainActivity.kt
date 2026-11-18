@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -77,6 +78,7 @@ data class BottomNavItem(val route: String, val label: String, val icon: ImageVe
 object NavRoutes {
     const val HOME = "home"
     const val LOGGER = "logger"
+    const val HISTORY = "history"
     const val SETTINGS = "settings"
 }
 
@@ -138,11 +140,12 @@ fun MainApp() {
 
     val bottomNavItems = listOf(
         BottomNavItem(NavRoutes.HOME, "ホーム", Icons.Filled.Home),
-        BottomNavItem(NavRoutes.LOGGER, "ロガー", Icons.Filled.BarChart)
+        BottomNavItem(NavRoutes.LOGGER, "ロガー", Icons.Filled.BarChart),
+        BottomNavItem(NavRoutes.HISTORY, "履歴", Icons.Filled.History)
     )
 
-    // Bottom Navigation はホームとロガーのみ表示 (設定画面では非表示)
-    val showBottomBar = currentDestination?.route in listOf(NavRoutes.HOME, NavRoutes.LOGGER)
+    // Bottom Navigation はホーム・ロガー・履歴のみ表示 (設定画面では非表示)
+    val showBottomBar = currentDestination?.route in listOf(NavRoutes.HOME, NavRoutes.LOGGER, NavRoutes.HISTORY)
 
     Scaffold(
         bottomBar = {
@@ -181,6 +184,11 @@ fun MainApp() {
             }
             composable(NavRoutes.LOGGER) {
                 LoggerScreen(
+                    onNavigateToSettings = { navController.navigate(NavRoutes.SETTINGS) }
+                )
+            }
+            composable(NavRoutes.HISTORY) {
+                HistoryScreen(
                     onNavigateToSettings = { navController.navigate(NavRoutes.SETTINGS) }
                 )
             }

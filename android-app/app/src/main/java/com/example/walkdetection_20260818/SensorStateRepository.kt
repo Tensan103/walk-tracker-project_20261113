@@ -5,14 +5,25 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
+ * 1件の歩行検知セッションを表すデータクラス。
+ *
+ * @param detectTimeMs  DETECT が発生した時刻 (System.currentTimeMillis())
+ * @param releaseTimeMs RELEASE が発生した時刻 (最後の歩行から rSec 秒後)
+ * @param durationSeconds 検知から解除までの経過秒数
+ */
+data class WalkHistoryItem(
+    val detectTimeMs: Long,
+    val releaseTimeMs: Long,
+    val durationSeconds: Int
+)
+
+/**
  * SensorTrackingService と UI の間でリアルタイムにセンサー状態を共有するシングルトン。
  *
- * 状態は2種類:
+ * 状態は3種類:
  *  - サービス稼働状態 (isServiceRunning): センサー監視・歩行判定・AWS送信が行われているか
  *  - ロギング状態 (isLoggingEnabled): CSVファイルへの書き込みが有効かどうか
- *
- * これにより「歩行判定はON / CSVロギングはOFF」という状態を表現でき、
- * MainScreen と LoggerScreen の干渉を防ぐ。
+ *  - 履歴 (walkHistory): 過去の歩行検知セッション一覧（最新が先頭）
  */
 object SensorStateRepository {
 
@@ -36,6 +47,10 @@ object SensorStateRepository {
     private val _isLoggingEnabled = MutableStateFlow(false)
     val isLoggingEnabled: StateFlow<Boolean> = _isLoggingEnabled.asStateFlow()
 
+    // --- 歩行検知履歴 (最新が先頭、アプリプロセスが生きている間は保持) ---
+    private val _walkHistory = MutableStateFlow<List<WalkHistoryItem>>(emptyList())
+    val walkHistory: StateFlow<List<WalkHistoryItem>> = _walkHistory.asStateFlow()
+
     fun updateAccel(values: FloatArray) {
         _accelValues.value = values.clone()
     }
@@ -56,7 +71,18 @@ object SensorStateRepository {
         _isLoggingEnabled.value = enabled
     }
 
-    /** サービス開始時に呼び出し、前回の記録をリセットする。 */
+    /**
+     * 新しい歩行検知履歴をリストの先頭に追加する。
+     * (スレッドセーフ: StateFlow の書き込みは内部でアトミックに処理される)
+     */
+    fun addWalkHistoryItem(item: WalkHistoryItem) {
+        _walkHistory.value = listOf(item) + _walkHistory.value
+    }
+
+    /**
+     * サービス開始時に呼び出し、センサー値・歩数・歩行状態をリセットする。
+     * 履歴 (walkHistory) はリセットしない（プロセスが続く限り蓄積）。
+     */
     fun reset() {
         _accelValues.value = FloatArray(3)
         _stepCount.value = 0

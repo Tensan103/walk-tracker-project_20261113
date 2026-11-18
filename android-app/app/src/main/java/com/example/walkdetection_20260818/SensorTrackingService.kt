@@ -64,6 +64,9 @@ class SensorTrackingService : Service() {
     // 二重初期化防止フラグ (START / START_LOGGING が重複しても安全)
     private var isInitialized = false
 
+    // DETECT が発生した時刻。RELEASE 時に履歴を生成するために保持する。
+    private var detectStartMs: Long? = null
+
     private val awsApiUrl = "https://4ss98ipt4m.execute-api.ap-northeast-3.amazonaws.com/prod/events"
 
     companion object {
@@ -260,6 +263,7 @@ class SensorTrackingService : Service() {
         if (stepTimestamps.size >= sSteps) {
             if (!SensorStateRepository.isWalking.value) {
                 SensorStateRepository.updateIsWalking(true)
+                detectStartMs = System.currentTimeMillis()   // DETECT 時刻を記録
                 serviceScope.launch { sendEventToAWS("DETECT") }
             }
         }
@@ -270,6 +274,18 @@ class SensorTrackingService : Service() {
             delay(rSec.seconds)   // ← tSec ではなく rSec を使用
             SensorStateRepository.updateIsWalking(false)
             stepTimestamps.clear()
+
+            // 履歴を生成して Repository に追加
+            val detectMs = detectStartMs
+            if (detectMs != null) {
+                val releaseMs = System.currentTimeMillis()
+                val durationSec = ((releaseMs - detectMs) / 1000L).toInt().coerceAtLeast(0)
+                SensorStateRepository.addWalkHistoryItem(
+                    WalkHistoryItem(detectMs, releaseMs, durationSec)
+                )
+                detectStartMs = null
+            }
+
             sendEventToAWS("RELEASE")
         }
     }
