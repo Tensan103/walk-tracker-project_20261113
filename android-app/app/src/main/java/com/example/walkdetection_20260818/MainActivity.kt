@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -141,11 +142,13 @@ fun MainApp() {
     val bottomNavItems = listOf(
         BottomNavItem(NavRoutes.HOME, "ホーム", Icons.Filled.Home),
         BottomNavItem(NavRoutes.LOGGER, "ロガー", Icons.Filled.BarChart),
-        BottomNavItem(NavRoutes.HISTORY, "履歴", Icons.Filled.History)
+        BottomNavItem(NavRoutes.HISTORY, "履歴", Icons.Filled.History),
+        BottomNavItem(NavRoutes.SETTINGS, "設定", Icons.Filled.Settings)
     )
 
-    // Bottom Navigation はホーム・ロガー・履歴のみ表示 (設定画面では非表示)
-    val showBottomBar = currentDestination?.route in listOf(NavRoutes.HOME, NavRoutes.LOGGER, NavRoutes.HISTORY)
+    val showBottomBar = currentDestination?.route in listOf(
+        NavRoutes.HOME, NavRoutes.LOGGER, NavRoutes.HISTORY, NavRoutes.SETTINGS
+    )
 
     Scaffold(
         bottomBar = {
@@ -215,6 +218,8 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
     var sStepsText by remember { mutableStateOf(SettingsRepository.getSSteps(context).toString()) }
     var rSecText by remember { mutableStateOf(SettingsRepository.getRSec(context).toString()) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    val alertType by SensorStateRepository.alertType.collectAsState()
 
     fun save() {
         val parsedTSec = tSecText.toIntOrNull()
@@ -324,6 +329,44 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall
                 )
             }
+
+            HorizontalDivider()
+
+            Text(
+                text = "検知時の警告設定",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                text = "歩行を検知したときの動作を選択します。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            val alertOptions = listOf(
+                AlertType.NONE to "なし",
+                AlertType.TOAST to "トーストで通知",
+                AlertType.FORCE_FOREGROUND to "検知画面を強制表示 (Full-Screen Intent)"
+            )
+            alertOptions.forEach { (type, label) ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(
+                        selected = alertType == type,
+                        onClick = { SensorStateRepository.updateAlertType(type) }
+                    )
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(start = 4.dp)
+                    )
+                }
+            }
+
+            HorizontalDivider()
 
             Spacer(modifier = Modifier.weight(1f))
 

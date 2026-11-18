@@ -8,6 +8,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
     <!-- Android 13 (API 33) 以降で通知を表示するための権限 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- バックグラウンドからの Full-Screen Intent (前面強制表示) のための権限 -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <application
         android:name=".WalkTrackerApplication"
         android:allowBackup="true"

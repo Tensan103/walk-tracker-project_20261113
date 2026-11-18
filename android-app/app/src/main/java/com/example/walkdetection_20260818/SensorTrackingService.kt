@@ -2,6 +2,7 @@ package com.example.walkdetection_20260818
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -10,8 +11,11 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Log
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -90,6 +94,10 @@ class SensorTrackingService : Service() {
 
         /** ACTION_START_LOGGING に付加するメモ文字列の Extra キー */
         const val EXTRA_MEMO = "extra_memo"
+
+        private const val ALERT_CHANNEL_ID = "walk_alert_channel"
+        private const val ALERT_NOTIFICATION_ID = 1002
+        private const val ALERT_REQUEST_CODE = 101
     }
 
     // -------------------------------------------------------------------------
@@ -169,14 +177,22 @@ class SensorTrackingService : Service() {
     // -------------------------------------------------------------------------
 
     private fun createNotificationChannel() {
-        val channel = NotificationChannel(
-            NOTIFICATION_CHANNEL_ID,
-            "歩行検知サービス",
-            NotificationManager.IMPORTANCE_LOW
-        ).apply {
-            description = "歩行検知システムがバックグラウンドで稼働中です"
-        }
-        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        val nm = getSystemService(NotificationManager::class.java)
+        nm.createNotificationChannel(
+            NotificationChannel(
+                NOTIFICATION_CHANNEL_ID,
+                "歩行検知サービス",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply { description = "歩行検知システムがバックグラウンドで稼働中です" }
+        )
+        // Full-Screen Intent 用の高優先度チャンネル
+        nm.createNotificationChannel(
+            NotificationChannel(
+                ALERT_CHANNEL_ID,
+                "歩行検知アラート",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply { description = "歩行検知時に前面表示するための高優先度通知" }
+        )
     }
 
     private fun startAsForeground() {
@@ -267,6 +283,7 @@ class SensorTrackingService : Service() {
                 SensorStateRepository.updateIsWalking(true)
                 detectStartMs = System.currentTimeMillis()   // DETECT 時刻を記録
                 detectStartStepCount = stepCount             // DETECT 時の歩数を記録
+                triggerAlert()
                 serviceScope.launch { sendEventToAWS("DETECT") }
             }
         }
@@ -349,6 +366,53 @@ class SensorTrackingService : Service() {
                 Log.e(TAG, "ログ書き込みエラー: ${e.message}")
             }
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Alert dispatch (歩行検知時の警告)
+    // -------------------------------------------------------------------------
+
+    /** Repository の alertType に応じてアラートを実行する。センサーコールバック (メインスレッド) から呼ばれる想定。 */
+    private fun triggerAlert() {
+        when (SensorStateRepository.alertType.value) {
+            AlertType.NONE -> { /* 何もしない */ }
+            AlertType.TOAST -> showToastAlert()
+            AlertType.FORCE_FOREGROUND -> showFullScreenAlert()
+        }
+    }
+
+    /** メインスレッドでトーストを表示する。 */
+    private fun showToastAlert() {
+        Handler(Looper.getMainLooper()).post {
+            Toast.makeText(this@SensorTrackingService, "歩行を検知しました", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /**
+     * Full-Screen Intent 付き高優先度通知を発行してアプリを前面に表示する。
+     *
+     * Android 10+ のバックグラウンド起動制限を回避するために、
+     * setFullScreenIntent() を持つ HIGH importance 通知を使う手法。
+     * 画面オフ時はロック画面上に表示され、画面オン時はヘッズアップ通知として表示される。
+     */
+    private fun showFullScreenAlert() {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            this, ALERT_REQUEST_CODE, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = NotificationCompat.Builder(this, ALERT_CHANNEL_ID)
+            .setContentTitle("歩行を検知しました")
+            .setContentText("歩行が開始されました。タップしてアプリを確認してください。")
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setFullScreenIntent(pendingIntent, true)
+            .setAutoCancel(true)
+            .build()
+        getSystemService(NotificationManager::class.java).notify(ALERT_NOTIFICATION_ID, notification)
     }
 
     // -------------------------------------------------------------------------

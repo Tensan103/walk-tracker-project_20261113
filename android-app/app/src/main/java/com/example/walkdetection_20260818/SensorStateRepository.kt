@@ -4,6 +4,16 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
+/** 歩行検知時の警告動作の種別 */
+enum class AlertType {
+    /** 何もしない */
+    NONE,
+    /** トースト通知 */
+    TOAST,
+    /** Full-Screen Intent でアプリを前面に強制表示 */
+    FORCE_FOREGROUND
+}
+
 /**
  * 1件の歩行検知セッションを表すデータクラス。
  *
@@ -54,6 +64,10 @@ object SensorStateRepository {
     private val _walkHistory = MutableStateFlow<List<WalkHistoryItem>>(emptyList())
     val walkHistory: StateFlow<List<WalkHistoryItem>> = _walkHistory.asStateFlow()
 
+    // --- 歩行検知時の警告設定 (インメモリのみ、アプリ終了でリセット) ---
+    private val _alertType = MutableStateFlow(AlertType.NONE)
+    val alertType: StateFlow<AlertType> = _alertType.asStateFlow()
+
     fun updateAccel(values: FloatArray) {
         _accelValues.value = values.clone()
     }
@@ -80,6 +94,10 @@ object SensorStateRepository {
      */
     fun addWalkHistoryItem(item: WalkHistoryItem) {
         _walkHistory.value = listOf(item) + _walkHistory.value
+    }
+
+    fun updateAlertType(type: AlertType) {
+        _alertType.value = type
     }
 
     /**
