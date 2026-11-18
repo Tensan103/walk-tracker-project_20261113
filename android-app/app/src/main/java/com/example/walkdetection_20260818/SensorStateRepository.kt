@@ -7,14 +7,17 @@ import kotlinx.coroutines.flow.asStateFlow
 /**
  * 1件の歩行検知セッションを表すデータクラス。
  *
- * @param detectTimeMs  DETECT が発生した時刻 (System.currentTimeMillis())
- * @param releaseTimeMs RELEASE が発生した時刻 (最後の歩行から rSec 秒後)
- * @param durationSeconds 検知から解除までの経過秒数
+ * @param detectTimeMs       DETECT が発生した時刻 (System.currentTimeMillis())
+ * @param releaseTimeMs      RELEASE が発生した時刻 (最後の歩行から rSec 秒後)
+ * @param durationSeconds    検知から解除までの経過秒数
+ * @param stepsDuringWalking DETECT 発生時点から RELEASE 直前までの歩数差分
+ *                           （検知中に何歩歩いたか）
  */
 data class WalkHistoryItem(
     val detectTimeMs: Long,
     val releaseTimeMs: Long,
-    val durationSeconds: Int
+    val durationSeconds: Int,
+    val stepsDuringWalking: Int
 )
 
 /**

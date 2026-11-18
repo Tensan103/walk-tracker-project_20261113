@@ -66,6 +66,8 @@ class SensorTrackingService : Service() {
 
     // DETECT が発生した時刻。RELEASE 時に履歴を生成するために保持する。
     private var detectStartMs: Long? = null
+    // DETECT が発生した時点の累計歩数。歩数差分を計算するために保持する。
+    private var detectStartStepCount: Int? = null
 
     private val awsApiUrl = "https://4ss98ipt4m.execute-api.ap-northeast-3.amazonaws.com/prod/events"
 
@@ -264,6 +266,7 @@ class SensorTrackingService : Service() {
             if (!SensorStateRepository.isWalking.value) {
                 SensorStateRepository.updateIsWalking(true)
                 detectStartMs = System.currentTimeMillis()   // DETECT 時刻を記録
+                detectStartStepCount = stepCount             // DETECT 時の歩数を記録
                 serviceScope.launch { sendEventToAWS("DETECT") }
             }
         }
@@ -280,10 +283,12 @@ class SensorTrackingService : Service() {
             if (detectMs != null) {
                 val releaseMs = System.currentTimeMillis()
                 val durationSec = ((releaseMs - detectMs) / 1000L).toInt().coerceAtLeast(0)
+                val stepsWalked = detectStartStepCount?.let { stepCount - it }?.coerceAtLeast(0) ?: 0
                 SensorStateRepository.addWalkHistoryItem(
-                    WalkHistoryItem(detectMs, releaseMs, durationSec)
+                    WalkHistoryItem(detectMs, releaseMs, durationSec, stepsWalked)
                 )
                 detectStartMs = null
+                detectStartStepCount = null
             }
 
             sendEventToAWS("RELEASE")

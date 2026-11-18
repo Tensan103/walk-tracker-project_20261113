@@ -191,7 +191,7 @@ private fun WalkHistoryCard(
                 }
             }
 
-            // 経過時間
+            // 経過時間・歩数
             Column(horizontalAlignment = Alignment.End) {
                 Text(
                     text = "${item.durationSeconds}秒",
@@ -201,6 +201,18 @@ private fun WalkHistoryCard(
                 )
                 Text(
                     text = "経過時間",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "${item.stepsDuringWalking}歩",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+                Text(
+                    text = "検知中歩数",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
