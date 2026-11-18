@@ -2,7 +2,6 @@ package com.example.walkdetection_20260818
 
 import android.Manifest
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -11,23 +10,29 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.navigation.NavDestination.Companion.hierarchy
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
 
 // SettingsRepository はセンサーの検知パラメータ (T秒, S歩) を SharedPreferences で管理する。
-// SensorTrackingService からも参照するため、このファイルに定義し続ける。
+// SensorTrackingService からも参照するためトップレベルに定義する。
 object SettingsRepository {
     private const val PREF_NAME = "walk_detection_prefs"
     private const val KEY_T_SEC = "t_sec"
@@ -54,26 +59,29 @@ object SettingsRepository {
     }
 }
 
-enum class AppScreen {
-    Main,
-    Settings
+/** Bottom Navigation の各タブ定義 */
+data class BottomNavItem(val route: String, val label: String, val icon: ImageVector)
+
+/** ナビゲーション用ルート定数 */
+object NavRoutes {
+    const val HOME = "home"
+    const val LOGGER = "logger"
+    const val SETTINGS = "settings"
 }
 
 class MainActivity : ComponentActivity() {
 
     // ACTIVITY_RECOGNITION (Android 10+) のランタイム権限リクエスト
     private val requestPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted: Boolean ->
-            if (isGranted) {
-                Log.d("MainActivity", "権限が許可されました")
-            } else {
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
+            if (!isGranted) {
                 Toast.makeText(this, "権限が拒否されました。歩数計が利用できません。", Toast.LENGTH_LONG).show()
             }
         }
 
     // POST_NOTIFICATIONS (Android 13+) のランタイム権限リクエスト
     private val requestNotificationPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted: Boolean ->
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
             Log.d("MainActivity", "通知権限: $isGranted")
         }
 
@@ -113,195 +121,80 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MainApp() {
-    var currentScreen by remember { mutableStateOf(AppScreen.Main) }
-    val context = LocalContext.current
+    val navController = rememberNavController()
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentDestination = navBackStackEntry?.destination
 
-    var tSec by remember { mutableIntStateOf(SettingsRepository.getTSec(context)) }
-    var sSteps by remember { mutableIntStateOf(SettingsRepository.getSSteps(context)) }
+    val bottomNavItems = listOf(
+        BottomNavItem(NavRoutes.HOME, "ホーム", Icons.Filled.Home),
+        BottomNavItem(NavRoutes.LOGGER, "ロガー", Icons.Filled.BarChart)
+    )
 
-    when (currentScreen) {
-        AppScreen.Main -> {
-            SensorLoggerScreen(
-                tSec = tSec,
-                sSteps = sSteps,
-                onNavigateToSettings = { currentScreen = AppScreen.Settings }
-            )
+    // Bottom Navigation はホームとロガーのみ表示 (設定画面では非表示)
+    val showBottomBar = currentDestination?.route in listOf(NavRoutes.HOME, NavRoutes.LOGGER)
+
+    Scaffold(
+        bottomBar = {
+            if (showBottomBar) {
+                NavigationBar {
+                    bottomNavItems.forEach { item ->
+                        NavigationBarItem(
+                            icon = { Icon(item.icon, contentDescription = item.label) },
+                            label = { Text(item.label) },
+                            selected = currentDestination?.hierarchy?.any { it.route == item.route } == true,
+                            onClick = {
+                                navController.navigate(item.route) {
+                                    // バックスタックを肥大化させずに切り替え
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            }
+                        )
+                    }
+                }
+            }
         }
-        AppScreen.Settings -> {
-            SettingsScreen(
-                initialTSec = tSec,
-                initialSSteps = sSteps,
-                onSaveSettings = { newTSec, newSSteps ->
-                    tSec = newTSec
-                    sSteps = newSSteps
-                    SettingsRepository.saveSettings(context, newTSec, newSSteps)
-                },
-                onNavigateBack = { currentScreen = AppScreen.Main }
-            )
+    ) { innerPadding ->
+        NavHost(
+            navController = navController,
+            startDestination = NavRoutes.HOME,
+            modifier = Modifier.padding(innerPadding)
+        ) {
+            composable(NavRoutes.HOME) {
+                MainScreen(
+                    onNavigateToSettings = { navController.navigate(NavRoutes.SETTINGS) }
+                )
+            }
+            composable(NavRoutes.LOGGER) {
+                LoggerScreen(
+                    onNavigateToSettings = { navController.navigate(NavRoutes.SETTINGS) }
+                )
+            }
+            composable(NavRoutes.SETTINGS) {
+                SettingsScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun SensorLoggerScreen(
-    tSec: Int,
-    sSteps: Int,
-    onNavigateToSettings: () -> Unit
-) {
-    val context = LocalContext.current
-
-    // SensorTrackingService が更新する StateFlow を収集して UI に反映する
-    val isServiceRunning by SensorStateRepository.isServiceRunning.collectAsState()
-    val stepCount by SensorStateRepository.stepCount.collectAsState()
-    val isWalking by SensorStateRepository.isWalking.collectAsState()
-    val accelValues by SensorStateRepository.accelValues.collectAsState()
-
-    fun startService() {
-        val intent = Intent(context, SensorTrackingService::class.java).apply {
-            action = SensorTrackingService.ACTION_START
-        }
-        context.startForegroundService(intent)
-        Toast.makeText(context, "記録を開始しました", Toast.LENGTH_SHORT).show()
-    }
-
-    fun stopService() {
-        val intent = Intent(context, SensorTrackingService::class.java).apply {
-            action = SensorTrackingService.ACTION_STOP
-        }
-        context.startService(intent)
-        Toast.makeText(context, "記録を終了しました", Toast.LENGTH_SHORT).show()
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // ヘッダー行
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(text = "歩行検知デモ", style = MaterialTheme.typography.headlineMedium)
-            Button(onClick = onNavigateToSettings) {
-                Text("⚙ 設定")
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // 判定条件カード
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-        ) {
-            Row(
-                modifier = Modifier.padding(12.dp),
-                horizontalArrangement = Arrangement.SpaceAround,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "判定条件: ${tSec}秒間に ${sSteps}歩",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // 歩行検知アラート表示
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(60.dp)
-                .background(if (isWalking) Color.Red else Color.LightGray),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = if (isWalking) "歩行検知！！" else "待機中...",
-                color = if (isWalking) Color.White else Color.DarkGray,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold
-            )
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // 累計歩数カード
-        Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(text = "累計歩数 (STEP_DETECTOR)", style = MaterialTheme.typography.titleMedium)
-                Text(text = "$stepCount 歩", style = MaterialTheme.typography.headlineSmall)
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // 加速度センサー値カード (サービスから StateFlow 経由でリアルタイム表示)
-        Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(text = "加速度センサー (ACCELEROMETER)", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    text = "X: ${"%.2f".format(accelValues[0])}  " +
-                            "Y: ${"%.2f".format(accelValues[1])}  " +
-                            "Z: ${"%.2f".format(accelValues[2])}",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // サービス開始 / 停止ボタン
-        Button(
-            onClick = { if (isServiceRunning) stopService() else startService() },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = if (isServiceRunning) MaterialTheme.colorScheme.error
-                else MaterialTheme.colorScheme.primary
-            )
-        ) {
-            Text(
-                text = if (isServiceRunning) "■ 記録を停止" else "▶ 記録を開始",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold
-            )
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-    }
-}
+// ─────────────────────────────────────────────────────────────────────────────
+// Settings Screen
+// ─────────────────────────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(
-    initialTSec: Int,
-    initialSSteps: Int,
-    onSaveSettings: (tSec: Int, sSteps: Int) -> Unit,
-    onNavigateBack: () -> Unit
-) {
+fun SettingsScreen(onNavigateBack: () -> Unit) {
     val context = LocalContext.current
-    var tSecText by remember { mutableStateOf(initialTSec.toString()) }
-    var sStepsText by remember { mutableStateOf(initialSSteps.toString()) }
+
+    // SharedPreferences から現在値を読み込む (NavHost 経由でパラメータを渡す必要がなくなる)
+    var tSecText by remember { mutableStateOf(SettingsRepository.getTSec(context).toString()) }
+    var sStepsText by remember { mutableStateOf(SettingsRepository.getSSteps(context).toString()) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
-
-    fun resetToDefault() {
-        val defaultT = SettingsRepository.DEFAULT_T_SEC
-        val defaultS = SettingsRepository.DEFAULT_S_STEPS
-        tSecText = defaultT.toString()
-        sStepsText = defaultS.toString()
-        errorMessage = null
-        onSaveSettings(defaultT, defaultS)
-        Toast.makeText(context, "デフォルト設定に戻しました", Toast.LENGTH_SHORT).show()
-    }
 
     fun save() {
         val parsedTSec = tSecText.toIntOrNull()
@@ -317,9 +210,19 @@ fun SettingsScreen(
         }
 
         errorMessage = null
-        onSaveSettings(parsedTSec, parsedSSteps)
+        SettingsRepository.saveSettings(context, parsedTSec, parsedSSteps)
         Toast.makeText(context, "設定を保存しました", Toast.LENGTH_SHORT).show()
         onNavigateBack()
+    }
+
+    fun resetToDefault() {
+        val defaultT = SettingsRepository.DEFAULT_T_SEC
+        val defaultS = SettingsRepository.DEFAULT_S_STEPS
+        tSecText = defaultT.toString()
+        sStepsText = defaultS.toString()
+        errorMessage = null
+        SettingsRepository.saveSettings(context, defaultT, defaultS)
+        Toast.makeText(context, "デフォルト設定に戻しました", Toast.LENGTH_SHORT).show()
     }
 
     Scaffold(

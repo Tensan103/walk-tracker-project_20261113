@@ -5,8 +5,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * SensorTrackingService と MainActivity UI の間でセンサー状態を共有するシングルトン。
- * StateFlow を使用することで Jetpack Compose の collectAsState() と自然に連携できる。
+ * SensorTrackingService と UI の間でリアルタイムにセンサー状態を共有するシングルトン。
+ *
+ * 状態は2種類:
+ *  - サービス稼働状態 (isServiceRunning): センサー監視・歩行判定・AWS送信が行われているか
+ *  - ロギング状態 (isLoggingEnabled): CSVファイルへの書き込みが有効かどうか
+ *
+ * これにより「歩行判定はON / CSVロギングはOFF」という状態を表現でき、
+ * MainScreen と LoggerScreen の干渉を防ぐ。
  */
 object SensorStateRepository {
 
@@ -22,9 +28,13 @@ object SensorStateRepository {
     private val _isWalking = MutableStateFlow(false)
     val isWalking: StateFlow<Boolean> = _isWalking.asStateFlow()
 
-    // --- サービス稼働中フラグ ---
+    // --- サービス稼働中フラグ (センサー監視・歩行判定が動いているか) ---
     private val _isServiceRunning = MutableStateFlow(false)
     val isServiceRunning: StateFlow<Boolean> = _isServiceRunning.asStateFlow()
+
+    // --- CSVロギング有効フラグ (LoggerScreen の「記録開始/停止」に連動) ---
+    private val _isLoggingEnabled = MutableStateFlow(false)
+    val isLoggingEnabled: StateFlow<Boolean> = _isLoggingEnabled.asStateFlow()
 
     fun updateAccel(values: FloatArray) {
         _accelValues.value = values.clone()
@@ -42,10 +52,15 @@ object SensorStateRepository {
         _isServiceRunning.value = running
     }
 
-    /** サービス開始時に呼び出し、前回の記録をリセットする */
+    fun updateLoggingEnabled(enabled: Boolean) {
+        _isLoggingEnabled.value = enabled
+    }
+
+    /** サービス開始時に呼び出し、前回の記録をリセットする。 */
     fun reset() {
         _accelValues.value = FloatArray(3)
         _stepCount.value = 0
         _isWalking.value = false
+        _isLoggingEnabled.value = false
     }
 }

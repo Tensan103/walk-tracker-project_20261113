@@ -37,25 +37,33 @@ import kotlin.time.Duration.Companion.seconds
 
 /**
  * センサー処理を画面オフ時にも継続するための Foreground Service。
- * SensorStateRepository (StateFlow) を介して MainActivity の Compose UI にリアルタイムで状態を配信する。
+ *
+ * 状態の2階層:
+ *  1. サービス稼働 (ACTION_START / ACTION_STOP): センサー監視・歩行判定・AWS送信
+ *  2. ロギング (ACTION_START_LOGGING / ACTION_STOP_LOGGING): CSVファイルへの書き込み
+ *
+ * LoggerScreen から ACTION_START_LOGGING を受け取るとロギングを開始し、
+ * サービスが未起動の場合は自動的に起動する。
+ * これにより MainScreen の「歩行判定」と LoggerScreen の「CSV記録」が独立して動作する。
  */
 class SensorTrackingService : Service() {
 
     private lateinit var sensorManager: SensorManager
     private var sensorEventListener: SensorEventListener? = null
 
-    // Service 専用の CoroutineScope。onDestroy で cancel する。
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     private var writer: BufferedWriter? = null
     private val okHttpClient = OkHttpClient()
 
-    // 歩行検知ロジック用のフィールド (SensorEventListener のコールバックから排他的にアクセス)
+    // スライディングウィンドウ用フィールド (センサーコールバックから排他的にアクセス)
     private val stepTimestamps = mutableListOf<Long>()
     private var walkingTimeoutJob: Job? = null
     private var stepCount = 0
 
-    // AWS API エンドポイント (CDK Output の ApiUrl + "/events")
+    // 二重初期化防止フラグ (START / START_LOGGING が重複しても安全)
+    private var isInitialized = false
+
     private val awsApiUrl = "https://4ss98ipt4m.execute-api.ap-northeast-3.amazonaws.com/prod/events"
 
     companion object {
@@ -63,11 +71,20 @@ class SensorTrackingService : Service() {
         private const val NOTIFICATION_CHANNEL_ID = "walk_tracking_channel"
         private const val NOTIFICATION_ID = 1001
 
-        /** MainActivity から Service を起動する際に Intent の action にセットする定数 */
+        /** MainScreen からサービスを起動する Action (センサー監視のみ、CSVロギングなし) */
         const val ACTION_START = "com.example.walkdetection_20260818.ACTION_START"
 
-        /** MainActivity から Service を停止する際に Intent の action にセットする定数 */
+        /** MainScreen / 任意からサービスを完全停止する Action */
         const val ACTION_STOP = "com.example.walkdetection_20260818.ACTION_STOP"
+
+        /** LoggerScreen から CSV ロギングを開始する Action (サービス未起動なら自動起動) */
+        const val ACTION_START_LOGGING = "com.example.walkdetection_20260818.ACTION_START_LOGGING"
+
+        /** LoggerScreen から CSV ロギングのみ停止する Action (サービスは継続) */
+        const val ACTION_STOP_LOGGING = "com.example.walkdetection_20260818.ACTION_STOP_LOGGING"
+
+        /** ACTION_START_LOGGING に付加するメモ文字列の Extra キー */
+        const val EXTRA_MEMO = "extra_memo"
     }
 
     // -------------------------------------------------------------------------
@@ -82,47 +99,64 @@ class SensorTrackingService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
-                // 停止要求: stopSelf() -> onDestroy が呼ばれクリーンアップされる
                 stopSelf()
                 return START_NOT_STICKY
             }
+            ACTION_STOP_LOGGING -> {
+                stopLogging()
+            }
+            ACTION_START_LOGGING -> {
+                // サービス未起動なら自動起動 (センサー登録など)
+                if (!isInitialized) initializeService()
+                val memo = intent.getStringExtra(EXTRA_MEMO) ?: ""
+                startLogging(memo)
+            }
             else -> {
-                // 起動要求 (ACTION_START または再起動)
-                startAsForeground()
-                SensorStateRepository.reset()
-                SensorStateRepository.updateServiceRunning(true)
-                initializeLogFile()
-                registerSensors()
+                // ACTION_START または OS による再起動 (START_STICKY)
+                if (!isInitialized) initializeService()
             }
         }
-        // クラッシュや強制終了後に OS がサービスを再起動する
         return START_STICKY
     }
 
-    override fun onBind(intent: Intent?): IBinder? = null  // Bound Service は使用しない
+    override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
-        // 1. センサー解除
+        // センサー解除
         sensorEventListener?.let { sensorManager.unregisterListener(it) }
         walkingTimeoutJob?.cancel()
 
-        // 2. 終了ログを直接書き込み (serviceScope は後でキャンセルするため IO で書く)
-        try {
-            writer?.write("${System.nanoTime()},TOGGLE_OFF,0.0,0.0,0.0,$stepCount\n")
-            writer?.flush()
-            writer?.close()
-        } catch (_: IOException) {}
-        writer = null
+        // ロギング中であれば同期的にファイルを閉じる
+        if (SensorStateRepository.isLoggingEnabled.value) {
+            try {
+                writer?.write("${System.nanoTime()},TOGGLE_OFF,0.0,0.0,0.0,$stepCount\n")
+                writer?.flush()
+                writer?.close()
+            } catch (_: IOException) {}
+            writer = null
+        }
 
-        // 3. CoroutineScope をキャンセル
         serviceScope.cancel()
 
-        // 4. UI 状態をリセット
         SensorStateRepository.updateServiceRunning(false)
+        SensorStateRepository.updateLoggingEnabled(false)
         SensorStateRepository.updateIsWalking(false)
 
         super.onDestroy()
         Log.d(TAG, "SensorTrackingService が停止しました")
+    }
+
+    // -------------------------------------------------------------------------
+    // Service initialization
+    // -------------------------------------------------------------------------
+
+    private fun initializeService() {
+        startAsForeground()
+        SensorStateRepository.reset()
+        SensorStateRepository.updateServiceRunning(true)
+        registerSensors()
+        isInitialized = true
+        Log.d(TAG, "Service initialized")
     }
 
     // -------------------------------------------------------------------------
@@ -133,12 +167,11 @@ class SensorTrackingService : Service() {
         val channel = NotificationChannel(
             NOTIFICATION_CHANNEL_ID,
             "歩行検知サービス",
-            NotificationManager.IMPORTANCE_LOW  // LOW: 通知音・バイブなし、ステータスバーには表示
+            NotificationManager.IMPORTANCE_LOW
         ).apply {
             description = "歩行検知システムがバックグラウンドで稼働中です"
         }
-        val notificationManager = getSystemService(NotificationManager::class.java)
-        notificationManager.createNotificationChannel(channel)
+        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
     private fun startAsForeground() {
@@ -146,16 +179,15 @@ class SensorTrackingService : Service() {
             .setContentTitle("歩行検知システム稼働中")
             .setContentText("センサーを監視しています")
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
-            .setOngoing(true)   // ユーザーがスワイプで消せないようにする
+            .setOngoing(true)
             .build()
 
-        // Android 14 (API 34) 以降は foregroundServiceType の指定が必須
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH)
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
-        Log.d(TAG, "Foreground Service を開始しました")
+        Log.d(TAG, "Foreground Service 起動")
     }
 
     // -------------------------------------------------------------------------
@@ -170,14 +202,16 @@ class SensorTrackingService : Service() {
         val listener = object : SensorEventListener {
             override fun onSensorChanged(event: SensorEvent?) {
                 event ?: return
-                // 設定は毎回 SharedPreferences から読む (UI で変更されても即時反映)
                 val tSec = SettingsRepository.getTSec(this@SensorTrackingService)
                 val sSteps = SettingsRepository.getSSteps(this@SensorTrackingService)
 
                 when (event.sensor.type) {
                     Sensor.TYPE_ACCELEROMETER -> {
                         SensorStateRepository.updateAccel(event.values)
-                        writeLog("ACCEL", event.timestamp, event.values, stepCount)
+                        // ロギングが有効な場合のみ CSV 書き込み
+                        if (SensorStateRepository.isLoggingEnabled.value) {
+                            writeLog("ACCEL", event.timestamp, event.values, stepCount)
+                        }
                     }
                     Sensor.TYPE_STEP_DETECTOR -> {
                         if (event.values[0] == 1.0f) {
@@ -194,37 +228,35 @@ class SensorTrackingService : Service() {
         if (stepDetector != null) {
             sensorManager.registerListener(listener, stepDetector, SensorManager.SENSOR_DELAY_UI)
         } else {
-            Log.w(TAG, "このデバイスは TYPE_STEP_DETECTOR をサポートしていません")
+            Log.w(TAG, "TYPE_STEP_DETECTOR 非対応デバイス")
         }
         sensorEventListener = listener
     }
 
     // -------------------------------------------------------------------------
-    // Walking detection logic (スライディングウィンドウ)
+    // Walking detection (スライディングウィンドウ)
     // -------------------------------------------------------------------------
 
     private fun handleStep(eventTimestampNs: Long, tSec: Int, sSteps: Int) {
         stepCount += 1
         SensorStateRepository.updateStepCount(stepCount)
-        writeLog("STEP", eventTimestampNs, floatArrayOf(1f, 0f, 0f), stepCount)
+
+        // ロギングが有効な場合のみ CSV 書き込み
+        if (SensorStateRepository.isLoggingEnabled.value) {
+            writeLog("STEP", eventTimestampNs, floatArrayOf(1f, 0f, 0f), stepCount)
+        }
 
         val currentTimeMs = System.currentTimeMillis()
         stepTimestamps.add(currentTimeMs)
-
-        // T秒より古い記録を削除
         stepTimestamps.removeAll { currentTimeMs - it > (tSec * 1000L) }
 
-        // S歩以上で「歩行検知」と判定
         if (stepTimestamps.size >= sSteps) {
             if (!SensorStateRepository.isWalking.value) {
                 SensorStateRepository.updateIsWalking(true)
-                serviceScope.launch {
-                    sendEventToAWS("DETECT")
-                }
+                serviceScope.launch { sendEventToAWS("DETECT") }
             }
         }
 
-        // T秒間新たな歩行がなければ「歩行解除」
         walkingTimeoutJob?.cancel()
         walkingTimeoutJob = serviceScope.launch {
             delay(tSec.seconds)
@@ -235,21 +267,47 @@ class SensorTrackingService : Service() {
     }
 
     // -------------------------------------------------------------------------
-    // CSV log file
+    // CSV Logging
     // -------------------------------------------------------------------------
 
-    private fun initializeLogFile() {
+    /**
+     * CSV ロギングを開始する。
+     * @param memo ファイル名末尾に付けるメモ文字列 (ファイル名に使えない文字は _ に置換)
+     */
+    private fun startLogging(memo: String) {
+        if (SensorStateRepository.isLoggingEnabled.value) {
+            Log.w(TAG, "ロギングは既に開始されています")
+            return
+        }
         try {
             val sdf = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
-            val fileName = "SensorLog_${sdf.format(Date())}.csv"
+            val safeMemo = memo.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+            val suffix = if (safeMemo.isNotBlank()) "_$safeMemo" else ""
+            val fileName = "SensorLog_${sdf.format(Date())}${suffix}.csv"
             val file = File(getExternalFilesDir(null), fileName)
             writer = BufferedWriter(FileWriter(file, true))
             writer?.write("timestamp_ns,sensor_type,val_1,val_2,val_3,total_steps\n")
-            writer?.write("${System.nanoTime()},TOGGLE_ON,0.0,0.0,0.0,0\n")
-            Log.d(TAG, "ログファイルを作成: ${file.absolutePath}")
+            writer?.write("${System.nanoTime()},TOGGLE_ON,0.0,0.0,0.0,$stepCount\n")
+            SensorStateRepository.updateLoggingEnabled(true)
+            Log.d(TAG, "CSV ロギング開始: ${file.absolutePath}")
         } catch (e: IOException) {
-            Log.e(TAG, "ログファイルの作成に失敗: ${e.message}")
+            Log.e(TAG, "ログファイル作成失敗: ${e.message}")
         }
+    }
+
+    /** CSV ロギングを停止し、ファイルを閉じる。 */
+    private fun stopLogging() {
+        if (!SensorStateRepository.isLoggingEnabled.value) return
+        SensorStateRepository.updateLoggingEnabled(false)
+        serviceScope.launch(Dispatchers.IO) {
+            try {
+                writer?.write("${System.nanoTime()},TOGGLE_OFF,0.0,0.0,0.0,$stepCount\n")
+                writer?.flush()
+                writer?.close()
+            } catch (_: IOException) {}
+            writer = null
+        }
+        Log.d(TAG, "CSV ロギング停止")
     }
 
     private fun writeLog(type: String, eventTimestampNs: Long, values: FloatArray, currentSteps: Int) {
@@ -273,7 +331,7 @@ class SensorTrackingService : Service() {
             try {
                 val body = JSONObject().apply {
                     put("deviceId", "pixel-7a-test")
-                    put("category", category)   // "DETECT" or "RELEASE"
+                    put("category", category)
                     put("timestamp", System.currentTimeMillis())
                 }.toString().toRequestBody("application/json".toMediaType())
 
