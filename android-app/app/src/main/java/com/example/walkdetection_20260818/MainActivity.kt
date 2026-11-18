@@ -1,63 +1,131 @@
-package com.example.walkdetection_20260818  // ← ★この1行（ご自身のプロジェクトのパッケージ名）を一番上に追加！
-// ★ご注意：1行目の package com.example.ご自身のプロジェクト名 は残してください！
-
-// ★ご注意：1行目の package com.example.ご自身のプロジェクト名 は残してください！
+package com.example.walkdetection_20260818
 
 import android.Manifest
+import android.app.NotificationManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
-import android.hardware.Sensor
-import android.hardware.SensorEvent
-import android.hardware.SensorEventListener
-import android.hardware.SensorManager
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings as AndroidSettings
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.semantics.Role
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import java.io.BufferedWriter
-import java.io.File
-import java.io.FileWriter
-import java.io.IOException
-import java.text.SimpleDateFormat
-import java.util.*
-import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONObject
+import androidx.navigation.NavDestination.Companion.hierarchy
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
+
+// SettingsRepository はセンサーの検知パラメータ (T秒, S歩) を SharedPreferences で管理する。
+// SensorTrackingService からも参照するためトップレベルに定義する。
+object SettingsRepository {
+    private const val PREF_NAME = "walk_detection_prefs"
+    private const val KEY_T_SEC = "t_sec"
+    private const val KEY_S_STEPS = "s_steps"
+    private const val KEY_R_SEC = "r_sec"
+
+    const val DEFAULT_T_SEC = 5
+    const val DEFAULT_S_STEPS = 3
+    /** 歩行検知後、「監視中」に戻るまでのデフォルト秒数 */
+    const val DEFAULT_R_SEC = 5
+
+    fun getTSec(context: Context): Int {
+        val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        return prefs.getInt(KEY_T_SEC, DEFAULT_T_SEC)
+    }
+
+    fun getSSteps(context: Context): Int {
+        val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        return prefs.getInt(KEY_S_STEPS, DEFAULT_S_STEPS)
+    }
+
+    /** 歩行検知後、「監視中」に戻るまでの秒数 (Release timeout) */
+    fun getRSec(context: Context): Int {
+        val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        return prefs.getInt(KEY_R_SEC, DEFAULT_R_SEC)
+    }
+
+    fun saveSettings(context: Context, tSec: Int, sSteps: Int, rSec: Int) {
+        val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        prefs.edit()
+            .putInt(KEY_T_SEC, tSec)
+            .putInt(KEY_S_STEPS, sSteps)
+            .putInt(KEY_R_SEC, rSec)
+            .apply()
+    }
+}
+
+/** Bottom Navigation の各タブ定義 */
+data class BottomNavItem(val route: String, val label: String, val icon: ImageVector)
+
+/** ナビゲーション用ルート定数 */
+object NavRoutes {
+    const val HOME = "home"
+    const val LOGGER = "logger"
+    const val HISTORY = "history"
+    const val SETTINGS = "settings"
+}
+
 class MainActivity : ComponentActivity() {
 
+    // ACTIVITY_RECOGNITION (Android 10+) のランタイム権限リクエスト
     private val requestPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted: Boolean ->
-            if (isGranted) Log.d("SensorApp", "歩行検知権限が許可されました")
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
+            if (!isGranted) {
+                Toast.makeText(this, "権限が拒否されました。歩数計が利用できません。", Toast.LENGTH_LONG).show()
+            }
+        }
+
+    // POST_NOTIFICATIONS (Android 13+) のランタイム権限リクエスト
+    private val requestNotificationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
+            Log.d("MainActivity", "通知権限: $isGranted")
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+
+        // ACTIVITY_RECOGNITION 権限リクエスト (Android 10+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION)
-                != PackageManager.PERMISSION_GRANTED) {
+                != PackageManager.PERMISSION_GRANTED
+            ) {
                 requestPermissionLauncher.launch(Manifest.permission.ACTIVITY_RECOGNITION)
+            }
+        }
+
+        // POST_NOTIFICATIONS 権限リクエスト (Android 13+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                requestNotificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
 
@@ -67,281 +135,336 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    SensorLoggerScreen()
+                    MainApp()
                 }
             }
         }
     }
 }
+
+@Composable
+fun MainApp() {
+    val navController = rememberNavController()
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentDestination = navBackStackEntry?.destination
+
+    val bottomNavItems = listOf(
+        BottomNavItem(NavRoutes.HOME, "ホーム", Icons.Filled.Home),
+        BottomNavItem(NavRoutes.LOGGER, "ロガー", Icons.Filled.BarChart),
+        BottomNavItem(NavRoutes.HISTORY, "履歴", Icons.Filled.History),
+        BottomNavItem(NavRoutes.SETTINGS, "設定", Icons.Filled.Settings)
+    )
+
+    val showBottomBar = currentDestination?.route in listOf(
+        NavRoutes.HOME, NavRoutes.LOGGER, NavRoutes.HISTORY, NavRoutes.SETTINGS
+    )
+
+    Scaffold(
+        bottomBar = {
+            if (showBottomBar) {
+                NavigationBar {
+                    bottomNavItems.forEach { item ->
+                        NavigationBarItem(
+                            icon = { Icon(item.icon, contentDescription = item.label) },
+                            label = { Text(item.label) },
+                            selected = currentDestination?.hierarchy?.any { it.route == item.route } == true,
+                            onClick = {
+                                navController.navigate(item.route) {
+                                    // バックスタックを肥大化させずに切り替え
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    ) { innerPadding ->
+        NavHost(
+            navController = navController,
+            startDestination = NavRoutes.HOME,
+            modifier = Modifier.padding(innerPadding)
+        ) {
+            composable(NavRoutes.HOME) {
+                MainScreen(
+                    onNavigateToSettings = { navController.navigate(NavRoutes.SETTINGS) }
+                )
+            }
+            composable(NavRoutes.LOGGER) {
+                LoggerScreen(
+                    onNavigateToSettings = { navController.navigate(NavRoutes.SETTINGS) }
+                )
+            }
+            composable(NavRoutes.HISTORY) {
+                HistoryScreen(
+                    onNavigateToSettings = { navController.navigate(NavRoutes.SETTINGS) }
+                )
+            }
+            composable(NavRoutes.SETTINGS) {
+                SettingsScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Settings Screen
+// ─────────────────────────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SensorLoggerScreen() {
+fun SettingsScreen(onNavigateBack: () -> Unit) {
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
 
-    // --- パラメータ設定 ---
-    val T_SEC = 5 // T秒
-    val S_STEPS = 3 // S歩
+    // SharedPreferences から現在値を読み込む (NavHost 経由でパラメータを渡す必要がなくなる)
+    var tSecText by remember { mutableStateOf(SettingsRepository.getTSec(context).toString()) }
+    var sStepsText by remember { mutableStateOf(SettingsRepository.getSSteps(context).toString()) }
+    var rSecText by remember { mutableStateOf(SettingsRepository.getRSec(context).toString()) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    // --- 状態管理 ---
-    var isRecording by remember { mutableStateOf(false) }
-    var accelValues by remember { mutableStateOf(FloatArray(3) { 0f }) }
-    var stepCount by remember { mutableIntStateOf(0) }
-    var logFilePath by remember { mutableStateOf("") }
+    val alertType by SensorStateRepository.alertType.collectAsState()
 
-    // R2: ファイル名に追加する任意の文字列
-    var fileSuffixText by remember { mutableStateOf("") }
+    // 権限確認のために OS 設定画面を起動し、戻ってきたときに再チェックする
+    var pendingAlertType by remember { mutableStateOf<AlertType?>(null) }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { _ ->
+        val pending = pendingAlertType ?: return@rememberLauncherForActivityResult
+        val granted = when (pending) {
+            AlertType.FULL_SCREEN_INTENT ->
+                Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
+                context.getSystemService(NotificationManager::class.java)
+                    ?.canUseFullScreenIntent() == true
+            AlertType.SYSTEM_ALERT_WINDOW ->
+                AndroidSettings.canDrawOverlays(context)
+            else -> true
+        }
+        if (granted) SensorStateRepository.updateAlertType(pending)
+        pendingAlertType = null
+    }
 
-    // R3: 歩行検知ロジック用の状態
-    var isWalkingAlert by remember { mutableStateOf(false) } // 画面アラート表示フラグ
-    val stepTimestamps = remember { mutableListOf<Long>() } // 歩行検知した時刻のリスト
-    var walkingTimeoutJob by remember { mutableStateOf<Job?>(null) } // アラート解除タイマー用ジョブ
-
-    var writer by remember { mutableStateOf<BufferedWriter?>(null) }
-
-    // APIのURLを定義（CDKのOutputsのApiUrlに "/events" を付けたもの）
-    val awsApiUrl = "https://4ss98ipt4m.execute-api.ap-northeast-3.amazonaws.com/prod/events";
-
-    // ログを書き込む関数（R1: 引数に currentSteps を追加）
-    fun writeLog(type: String, eventTimestampNs: Long, values: FloatArray, currentSteps: Int) {
-        if (writer == null) return
-
-        // タイムスタンプ, センサー種別, X/歩数, Y, Z, 累計歩数
-        val csvLine = "$eventTimestampNs,$type,${values.joinToString(",")},$currentSteps\n"
-
-        coroutineScope.launch(Dispatchers.IO) {
-            try {
-                writer?.write(csvLine)
-            } catch (e: IOException) {
-                Log.e("SensorApp", "ログ書き込みエラー: ${e.message}")
+    fun onAlertTypeSelected(type: AlertType) {
+        when (type) {
+            AlertType.FULL_SCREEN_INTENT -> {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+                    context.getSystemService(NotificationManager::class.java)
+                        ?.canUseFullScreenIntent() == false
+                ) {
+                    pendingAlertType = type
+                    permissionLauncher.launch(
+                        Intent(AndroidSettings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT).apply {
+                            data = Uri.parse("package:${context.packageName}")
+                        }
+                    )
+                    return
+                }
+                SensorStateRepository.updateAlertType(type)
             }
+            AlertType.SYSTEM_ALERT_WINDOW -> {
+                if (!AndroidSettings.canDrawOverlays(context)) {
+                    pendingAlertType = type
+                    permissionLauncher.launch(
+                        Intent(AndroidSettings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
+                            data = Uri.parse("package:${context.packageName}")
+                        }
+                    )
+                    return
+                }
+                SensorStateRepository.updateAlertType(type)
+            }
+            else -> SensorStateRepository.updateAlertType(type)
         }
     }
 
-    fun toggleRecording() {
-        if (!isRecording) {
-            try {
-                val sdf = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
-                val timeStr = sdf.format(Date())
+    fun save() {
+        val parsedTSec = tSecText.toIntOrNull()
+        val parsedSSteps = sStepsText.toIntOrNull()
+        val parsedRSec = rSecText.toIntOrNull()
 
-                // R2: テキストボックスの値をファイル名に反映（ファイル名に使えない記号はアンダーバーに置換）
-                val safeSuffix = fileSuffixText.replace(Regex("[\\\\/:*?\"<>|]"), "_")
-                val suffixStr = if (safeSuffix.isNotBlank()) "_$safeSuffix" else ""
-                val fileName = "SensorLog_${timeStr}${suffixStr}.csv"
-
-                val dir = context.getExternalFilesDir(null)
-                val file = File(dir, fileName)
-                writer = BufferedWriter(FileWriter(file, true))
-
-                // ヘッダーに total_steps を追加
-                writer?.write("timestamp_ns,sensor_type,val_1,val_2,val_3,total_steps\n")
-
-                logFilePath = file.absolutePath
-                stepCount = 0
-                stepTimestamps.clear()
-                isWalkingAlert = false
-                isRecording = true
-                Toast.makeText(context, "記録を開始しました", Toast.LENGTH_SHORT).show()
-
-                writeLog("TOGGLE_ON", System.nanoTime(), floatArrayOf(0f, 0f, 0f), stepCount)
-
-            } catch (e: IOException) {
-                Toast.makeText(context, "ファイルの作成に失敗しました", Toast.LENGTH_SHORT).show()
-            }
-        } else {
-            isRecording = false
-            writeLog("TOGGLE_OFF", System.nanoTime(), floatArrayOf(0f, 0f, 0f), stepCount)
-
-            coroutineScope.launch(Dispatchers.IO) {
-                try {
-                    writer?.flush()
-                    writer?.close()
-                    writer = null
-                } catch (e: IOException) {}
-            }
-            Toast.makeText(context, "記録を終了しました", Toast.LENGTH_SHORT).show()
+        if (parsedTSec == null || parsedTSec <= 0) {
+            errorMessage = "判定時間(T)には1以上の正の整数を入力してください"
+            return
         }
+        if (parsedSSteps == null || parsedSSteps <= 0) {
+            errorMessage = "必要歩数(S)には1以上の正の整数を入力してください"
+            return
+        }
+        if (parsedRSec == null || parsedRSec <= 0) {
+            errorMessage = "解除時間(R)には1以上の正の整数を入力してください"
+            return
+        }
+
+        errorMessage = null
+        SettingsRepository.saveSettings(context, parsedTSec, parsedSSteps, parsedRSec)
+        Toast.makeText(context, "設定を保存しました", Toast.LENGTH_SHORT).show()
+        onNavigateBack()
     }
 
-    DisposableEffect(Unit) {
-        val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        val accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-        val stepDetector = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR)
+    fun resetToDefault() {
+        val defaultT = SettingsRepository.DEFAULT_T_SEC
+        val defaultS = SettingsRepository.DEFAULT_S_STEPS
+        val defaultR = SettingsRepository.DEFAULT_R_SEC
+        tSecText = defaultT.toString()
+        sStepsText = defaultS.toString()
+        rSecText = defaultR.toString()
+        errorMessage = null
+        SettingsRepository.saveSettings(context, defaultT, defaultS, defaultR)
+        Toast.makeText(context, "デフォルト設定に戻しました", Toast.LENGTH_SHORT).show()
+    }
 
-        val sensorEventListener = object : SensorEventListener {
-            override fun onSensorChanged(event: SensorEvent?) {
-                event ?: return
-
-                when (event.sensor.type) {
-                    Sensor.TYPE_ACCELEROMETER -> {
-                        accelValues = event.values.clone()
-                        if (isRecording) {
-                            writeLog("ACCEL", event.timestamp, event.values, stepCount)
-                        }
-                    }
-                    Sensor.TYPE_STEP_DETECTOR -> {
-                        if (event.values[0] == 1.0f) {
-                            stepCount += 1
-                            if (isRecording) {
-                                writeLog("STEP", event.timestamp, floatArrayOf(1f, 0f, 0f), stepCount)
-                            }
-
-                            // --- R3: 歩行検知ロジック ---
-                            val currentTimeMs = System.currentTimeMillis()
-                            stepTimestamps.add(currentTimeMs)
-
-                            // T秒(5000ミリ秒)より古いデータをリストから削除
-                            stepTimestamps.removeAll { currentTimeMs - it > (T_SEC * 1000) }
-
-                            // S歩(3歩)以上カウントされたか判定
-                            if (stepTimestamps.size >= S_STEPS) {
-                                if (!isWalkingAlert) {
-                                    isWalkingAlert = true
-                                    Toast.makeText(context, "歩行検知", Toast.LENGTH_SHORT).show()
-
-                                    // ★ここで「検知」をAWSに送信 (コルーチン内で非同期実行)
-                                    coroutineScope.launch {
-                                        sendWalkingEventToAWS(awsApiUrl, "DETECT")
-                                    }
-                                }
-                            }
-
-                            // 既存の解除タイマーがあればキャンセル
-                            walkingTimeoutJob?.cancel()
-
-                            // 新しくT秒後にアラートを解除するタイマーをセット
-                            walkingTimeoutJob = coroutineScope.launch {
-                                delay(T_SEC * 1000L) // 5秒待機
-                                isWalkingAlert = false // 5秒間新しい歩行がなければアラート消去
-                                stepTimestamps.clear() // リストもリセット
-
-                                // ★T秒経過したら「解除」をAWSに送信
-                                sendWalkingEventToAWS(awsApiUrl, "RELEASE")
-                            }
-                        }
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("歩行検知 パラメータ設定") },
+                navigationIcon = {
+                    TextButton(onClick = onNavigateBack) {
+                        Text("← 戻る")
                     }
                 }
-            }
-            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
-        }
-
-        sensorManager.registerListener(sensorEventListener, accelerometer, SensorManager.SENSOR_DELAY_UI)
-        if (stepDetector != null) {
-            sensorManager.registerListener(sensorEventListener, stepDetector, SensorManager.SENSOR_DELAY_UI)
-        }
-
-        onDispose {
-            sensorManager.unregisterListener(sensorEventListener)
-            if (isRecording) {
-                try {
-                    writer?.flush()
-                    writer?.close()
-                } catch (e: IOException) {}
-            }
-        }
-    }
-
-    Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(text = "歩行検知デモ", style = MaterialTheme.typography.headlineMedium)
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // --- R3: 歩行検知アラート表示 ---
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(60.dp)
-                .background(if (isWalkingAlert) Color.Red else Color.LightGray),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = if (isWalkingAlert) "歩行検知！！" else "待機中...",
-                color = if (isWalkingAlert) Color.White else Color.DarkGray,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold
             )
         }
-
-        Spacer(modifier = Modifier.height(16.dp))
-/*
-        Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(text = "加速度センサー", style = MaterialTheme.typography.titleMedium)
-                Text(text = "X軸: ${String.format("%.2f", accelValues[0])}")
-                Text(text = "Y軸: ${String.format("%.2f", accelValues[1])}")
-                Text(text = "Z軸: ${String.format("%.2f", accelValues[2])}")
-            }
-        }
-*/
-        Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(text = "累計歩数 (STEP_DETECTOR)", style = MaterialTheme.typography.titleMedium)
-                Text(text = "$stepCount 歩", style = MaterialTheme.typography.headlineSmall)
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-/*
-        // --- R2: ファイル名用の任意の文字列入力 ---
-        OutlinedTextField(
-            value = fileSuffixText,
-            onValueChange = { fileSuffixText = it },
-            label = { Text("検証メモ（ファイル名に追加）") },
-            placeholder = { Text("例: カバンの中_歩行") },
-            modifier = Modifier.fillMaxWidth(),
-            enabled = !isRecording // 記録中は変更不可にする
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Button(
-            onClick = { toggleRecording() },
-            colors = ButtonDefaults.buttonColors(
-                containerColor = if (isRecording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-            ),
-            modifier = Modifier.fillMaxWidth().height(60.dp)
+    ) { innerPadding ->
+        // 外側 Column: コンテンツ(スクロール) + ボタン(固定) の2段構成
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
         ) {
-            Text(text = if (isRecording) "■ 記録を停止" else "▶ 記録を開始")
-        }
+            // ── スクロール可能なコンテンツ領域 ───────────────────────
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "歩行判定パラメータを設定できます。\n" +
+                           "T秒間にS歩で「検知」、最後の歩行からR秒後に「解除」します。",
+                    style = MaterialTheme.typography.bodyMedium
+                )
 
-        if (logFilePath.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(text = "保存先: \n$logFilePath", style = MaterialTheme.typography.bodySmall)
-        }
- */
-    }
-}
-private val okHttpClient = OkHttpClient()
+                OutlinedTextField(
+                    value = tSecText,
+                    onValueChange = {
+                        tSecText = it
+                        errorMessage = null
+                    },
+                    label = { Text("判定保持時間 T (秒)") },
+                    supportingText = { Text("デフォルト: ${SettingsRepository.DEFAULT_T_SEC} 秒") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
 
-suspend fun sendWalkingEventToAWS(apiUrl: String, category: String) {
-    withContext(Dispatchers.IO) {
-        try {
-            val jsonObject = JSONObject().apply {
-                put("deviceId", "pixel-7a-test") // 今は固定文字列
-                put("category", category)        // "DETECT" か "RELEASE"
-                put("timestamp", System.currentTimeMillis())
-            }
+                OutlinedTextField(
+                    value = sStepsText,
+                    onValueChange = {
+                        sStepsText = it
+                        errorMessage = null
+                    },
+                    label = { Text("必要歩数 S (歩)") },
+                    supportingText = { Text("デフォルト: ${SettingsRepository.DEFAULT_S_STEPS} 歩") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
 
-            val requestBody = jsonObject.toString().toRequestBody("application/json".toMediaType())
-            val request = Request.Builder()
-                .url(apiUrl)
-                .post(requestBody)
-                .build()
+                OutlinedTextField(
+                    value = rSecText,
+                    onValueChange = {
+                        rSecText = it
+                        errorMessage = null
+                    },
+                    label = { Text("解除時間 R (秒)") },
+                    supportingText = { Text("歩行検知後、「監視中」に戻るまでの秒数 / デフォルト: ${SettingsRepository.DEFAULT_R_SEC} 秒") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
 
-            okHttpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    Log.e("AWS_API", "API Error: ${response.code}")
-                } else {
-                    Log.d("AWS_API", "送信成功: $category")
+                if (errorMessage != null) {
+                    Text(
+                        text = errorMessage!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+
+                HorizontalDivider()
+
+                Text(
+                    text = "検知時の警告設定",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = "歩行を検知したときの動作を選択します。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                val alertOptions = listOf(
+                    AlertType.NONE to "なし",
+                    AlertType.TOAST to "トーストで通知",
+                    AlertType.FULL_SCREEN_INTENT to "通知から前面強制表示 (Android 14+ は要権限)",
+                    AlertType.SYSTEM_ALERT_WINDOW to "オーバーレイ警告を表示 (要権限)"
+                )
+                Column {
+                    alertOptions.forEach { (type, label) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .selectable(
+                                    selected = alertType == type,
+                                    onClick = { onAlertTypeSelected(type) },
+                                    role = Role.RadioButton
+                                )
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = alertType == type,
+                                onClick = null  // 親 Row が onClick を処理
+                            )
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(start = 8.dp)
+                            )
+                        }
+                    }
                 }
             }
-        } catch (e: Exception) {
-            Log.e("AWS_API", "通信例外: ${e.message}")
+
+            // ── 画面下部に固定されたボタン ──────────────────────────
+            HorizontalDivider()
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = { save() },
+                    modifier = Modifier.fillMaxWidth().height(50.dp)
+                ) {
+                    Text("設定を保存")
+                }
+                OutlinedButton(
+                    onClick = { resetToDefault() },
+                    modifier = Modifier.fillMaxWidth().height(50.dp)
+                ) {
+                    Text("デフォルトに戻す")
+                }
+            }
         }
     }
 }

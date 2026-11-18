@@ -3,7 +3,17 @@
     xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- Android 14 (API 34) 以降で歩数計/ヘルスセンサーを Foreground Service で利用するための権限 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
+    <!-- Android 13 (API 33) 以降で通知を表示するための権限 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- バックグラウンドからの Full-Screen Intent (前面強制表示) のための権限 -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <!-- 他アプリの上へのオーバーレイ表示のための権限 (ユーザーが OS 設定で許可) -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <application
+        android:name=".WalkTrackerApplication"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -24,6 +34,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Foreground Service: センサー追跡サービス (foregroundServiceType="health" は API 34 以降で必須) -->
+        <service
+            android:name=".SensorTrackingService"
+            android:foregroundServiceType="health"
+            android:exported="false" />
     </application>
 
 </manifest>
