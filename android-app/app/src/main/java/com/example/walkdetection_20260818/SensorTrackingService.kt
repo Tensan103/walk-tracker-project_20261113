@@ -6,6 +6,8 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.Color
+import android.graphics.PixelFormat
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -14,7 +16,11 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.provider.Settings
 import android.util.Log
+import android.view.Gravity
+import android.view.WindowManager
+import android.widget.TextView
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
@@ -72,6 +78,9 @@ class SensorTrackingService : Service() {
     private var detectStartMs: Long? = null
     // DETECT が発生した時点の累計歩数。歩数差分を計算するために保持する。
     private var detectStartStepCount: Int? = null
+
+    // SYSTEM_ALERT_WINDOW オーバーレイ View の参照 (表示中は非 null)
+    private var overlayView: android.view.View? = null
 
     private val awsApiUrl = "https://4ss98ipt4m.execute-api.ap-northeast-3.amazonaws.com/prod/events"
 
@@ -149,6 +158,7 @@ class SensorTrackingService : Service() {
             writer = null
         }
 
+        removeOverlay()
         serviceScope.cancel()
 
         SensorStateRepository.updateServiceRunning(false)
@@ -308,6 +318,7 @@ class SensorTrackingService : Service() {
                 detectStartStepCount = null
             }
 
+            removeOverlay()
             sendEventToAWS("RELEASE")
         }
     }
@@ -377,7 +388,8 @@ class SensorTrackingService : Service() {
         when (SensorStateRepository.alertType.value) {
             AlertType.NONE -> { /* 何もしない */ }
             AlertType.TOAST -> showToastAlert()
-            AlertType.FORCE_FOREGROUND -> showFullScreenAlert()
+            AlertType.FULL_SCREEN_INTENT -> showFullScreenAlert()
+            AlertType.SYSTEM_ALERT_WINDOW -> showOverlayAlert()
         }
     }
 
@@ -413,6 +425,57 @@ class SensorTrackingService : Service() {
             .setAutoCancel(true)
             .build()
         getSystemService(NotificationManager::class.java).notify(ALERT_NOTIFICATION_ID, notification)
+    }
+
+    /**
+     * SYSTEM_ALERT_WINDOW 権限を使い、最前面に警告 View を表示する。
+     * 画面オン/オフ問わず他アプリの上に赤い警告を重ねる。
+     * RELEASE 時またはタップ時に removeOverlay() で破棄する。
+     */
+    private fun showOverlayAlert() {
+        if (!Settings.canDrawOverlays(this)) {
+            Log.w(TAG, "SYSTEM_ALERT_WINDOW 権限がないためオーバーレイをスキップ")
+            return
+        }
+        if (overlayView != null) return  // 既に表示中
+
+        val wm = getSystemService(WINDOW_SERVICE) as WindowManager
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            y = 120
+        }
+
+        val view = TextView(this).apply {
+            text = "🚶 歩行検知！"
+            textSize = 20f
+            setBackgroundColor(Color.argb(220, 211, 47, 47))  // 半透明赤
+            setTextColor(Color.WHITE)
+            setPadding(48, 24, 48, 24)
+            setOnClickListener { removeOverlay() }
+        }
+
+        overlayView = view
+        wm.addView(view, params)
+        Log.d(TAG, "オーバーレイ表示")
+    }
+
+    /** オーバーレイ View を WindowManager から取り外す (メインスレッドで実行)。 */
+    private fun removeOverlay() {
+        Handler(Looper.getMainLooper()).post {
+            overlayView?.let { view ->
+                try {
+                    (getSystemService(WINDOW_SERVICE) as WindowManager).removeView(view)
+                    Log.d(TAG, "オーバーレイ破棄")
+                } catch (_: Exception) {}
+                overlayView = null
+            }
+        }
     }
 
     // -------------------------------------------------------------------------

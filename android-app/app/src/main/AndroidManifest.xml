@@ -10,6 +10,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- バックグラウンドからの Full-Screen Intent (前面強制表示) のための権限 -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <!-- 他アプリの上へのオーバーレイ表示のための権限 (ユーザーが OS 設定で許可) -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <application
         android:name=".WalkTrackerApplication"
         android:allowBackup="true"

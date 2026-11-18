@@ -1,13 +1,18 @@
 package com.example.walkdetection_20260818
 
 import android.Manifest
+import android.app.NotificationManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings as AndroidSettings
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -225,6 +230,58 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
 
     val alertType by SensorStateRepository.alertType.collectAsState()
 
+    // 権限確認のために OS 設定画面を起動し、戻ってきたときに再チェックする
+    var pendingAlertType by remember { mutableStateOf<AlertType?>(null) }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { _ ->
+        val pending = pendingAlertType ?: return@rememberLauncherForActivityResult
+        val granted = when (pending) {
+            AlertType.FULL_SCREEN_INTENT ->
+                Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
+                context.getSystemService(NotificationManager::class.java)
+                    ?.canUseFullScreenIntent() == true
+            AlertType.SYSTEM_ALERT_WINDOW ->
+                AndroidSettings.canDrawOverlays(context)
+            else -> true
+        }
+        if (granted) SensorStateRepository.updateAlertType(pending)
+        pendingAlertType = null
+    }
+
+    fun onAlertTypeSelected(type: AlertType) {
+        when (type) {
+            AlertType.FULL_SCREEN_INTENT -> {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+                    context.getSystemService(NotificationManager::class.java)
+                        ?.canUseFullScreenIntent() == false
+                ) {
+                    pendingAlertType = type
+                    permissionLauncher.launch(
+                        Intent(AndroidSettings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT).apply {
+                            data = Uri.parse("package:${context.packageName}")
+                        }
+                    )
+                    return
+                }
+                SensorStateRepository.updateAlertType(type)
+            }
+            AlertType.SYSTEM_ALERT_WINDOW -> {
+                if (!AndroidSettings.canDrawOverlays(context)) {
+                    pendingAlertType = type
+                    permissionLauncher.launch(
+                        Intent(AndroidSettings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
+                            data = Uri.parse("package:${context.packageName}")
+                        }
+                    )
+                    return
+                }
+                SensorStateRepository.updateAlertType(type)
+            }
+            else -> SensorStateRepository.updateAlertType(type)
+        }
+    }
+
     fun save() {
         val parsedTSec = tSecText.toIntOrNull()
         val parsedSSteps = sStepsText.toIntOrNull()
@@ -357,7 +414,8 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
                 val alertOptions = listOf(
                     AlertType.NONE to "なし",
                     AlertType.TOAST to "トーストで通知",
-                    AlertType.FORCE_FOREGROUND to "検知画面を強制表示 (Full-Screen Intent)"
+                    AlertType.FULL_SCREEN_INTENT to "通知から前面強制表示 (Android 14+ は要権限)",
+                    AlertType.SYSTEM_ALERT_WINDOW to "オーバーレイ警告を表示 (要権限)"
                 )
                 Column {
                     alertOptions.forEach { (type, label) ->
@@ -366,7 +424,7 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
                                 .fillMaxWidth()
                                 .selectable(
                                     selected = alertType == type,
-                                    onClick = { SensorStateRepository.updateAlertType(type) },
+                                    onClick = { onAlertTypeSelected(type) },
                                     role = Role.RadioButton
                                 )
                                 .padding(vertical = 4.dp),
@@ -374,7 +432,7 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
                         ) {
                             RadioButton(
                                 selected = alertType == type,
-                                onClick = null  // 親 Row が onCick を処理
+                                onClick = null  // 親 Row が onClick を処理
                             )
                             Text(
                                 text = label,

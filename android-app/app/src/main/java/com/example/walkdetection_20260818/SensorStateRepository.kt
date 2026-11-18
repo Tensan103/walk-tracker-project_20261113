@@ -10,8 +10,10 @@ enum class AlertType {
     NONE,
     /** トースト通知 */
     TOAST,
-    /** Full-Screen Intent でアプリを前面に強制表示 */
-    FORCE_FOREGROUND
+    /** Full-Screen Intent 付き高優先度通知でアプリを前面に強制起動 (Android 14+ は要権限) */
+    FULL_SCREEN_INTENT,
+    /** WindowManager TYPE_APPLICATION_OVERLAY で最前面に警告View を表示 (要 SYSTEM_ALERT_WINDOW 権限) */
+    SYSTEM_ALERT_WINDOW
 }
 
 /**
