@@ -1,6 +1,5 @@
 package com.example.walkdetection_20260818
 
-import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -21,10 +20,13 @@ import androidx.compose.ui.unit.sp
 /**
  * メイン画面（本番用 UI）。
  *
- * - 中央に大きく歩行ステータスを表示するシンプルな構成。
- * - SensorStateRepository の StateFlow を監視して自動更新される。
- * - サービスの起動/停止ボタンを持つ。
- * - CSV ロギングはこの画面では一切行わない（LoggerScreen の責務）。
+ * サービスの開始/停止は画面ON/OFFによって自動制御されるため、
+ * このUIにはボタンを持たない。
+ *
+ * 表示内容:
+ *  - 中央の円形インジケーター: サービス停止中/監視中/歩行検知！ の3状態
+ *  - 累計歩数 (動作確認用)
+ *  - 判定条件 (T秒/S歩)
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -33,24 +35,11 @@ fun MainScreen(onNavigateToSettings: () -> Unit) {
 
     val isWalking by SensorStateRepository.isWalking.collectAsState()
     val isServiceRunning by SensorStateRepository.isServiceRunning.collectAsState()
+    val stepCount by SensorStateRepository.stepCount.collectAsState()
 
     // 設定値の読み取り (表示用のみ)
     val tSec = remember { SettingsRepository.getTSec(context) }
     val sSteps = remember { SettingsRepository.getSSteps(context) }
-
-    fun startService() {
-        val intent = Intent(context, SensorTrackingService::class.java).apply {
-            action = SensorTrackingService.ACTION_START
-        }
-        context.startForegroundService(intent)
-    }
-
-    fun stopService() {
-        val intent = Intent(context, SensorTrackingService::class.java).apply {
-            action = SensorTrackingService.ACTION_STOP
-        }
-        context.startService(intent)
-    }
 
     Scaffold(
         topBar = {
@@ -72,7 +61,7 @@ fun MainScreen(onNavigateToSettings: () -> Unit) {
             verticalArrangement = Arrangement.Center
         ) {
 
-            // ── 大きな円形ステータスインジケーター ──────────────────────────
+            // ── 大きな円形ステータスインジケーター ──────────────────────
             val circleColor = when {
                 !isServiceRunning -> Color(0xFF9E9E9E)   // 停止中: グレー
                 isWalking         -> Color(0xFFB71C1C)   // 歩行検知: 赤
@@ -101,34 +90,38 @@ fun MainScreen(onNavigateToSettings: () -> Unit) {
                 )
             }
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(28.dp))
 
-            // 判定条件の補足表示
+            // ── 累計歩数 (動作確認用) ──────────────────────────────────
+            Text(
+                text = "$stepCount 歩",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = "累計歩数",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // ── 判定条件の補足表示 ─────────────────────────────────────
             Text(
                 text = "判定条件: ${tSec}秒間に ${sSteps}歩",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            Spacer(modifier = Modifier.height(40.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            // ── サービス開始 / 停止ボタン ──────────────────────────────────
-            Button(
-                onClick = { if (isServiceRunning) stopService() else startService() },
-                modifier = Modifier
-                    .width(200.dp)
-                    .height(52.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isServiceRunning) MaterialTheme.colorScheme.error
-                    else MaterialTheme.colorScheme.primary
-                )
-            ) {
-                Text(
-                    text = if (isServiceRunning) "■ 停止" else "▶ 開始",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
+            // ── 自動制御の説明ラベル ───────────────────────────────────
+            Text(
+                text = "画面ON/OFFで自動的に開始/停止します",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+            )
         }
     }
 }
