@@ -68,6 +68,10 @@ export class BackendStack extends cdk.Stack {
     });
     devicesTable.grantReadWriteData(devicesApiLambda);
 
+    // readLambda に DevicesTable の読み取り権限と環境変数を追加
+    devicesTable.grantReadData(readLambda);
+    readLambda.addEnvironment('DEVICES_TABLE_NAME', devicesTable.tableName);
+
     // /devices エンドポイント (GET, POST, PUT)
     const devices = api.root.addResource('devices');
     devices.addMethod('GET',  new apigateway.LambdaIntegration(devicesApiLambda));

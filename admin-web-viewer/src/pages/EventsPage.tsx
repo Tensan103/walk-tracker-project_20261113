@@ -4,6 +4,8 @@ type WalkEvent = {
   deviceId: string;
   timestamp: number;
   category: string;
+  userName: string;
+  deviceModel: string;
 };
 
 const EVENTS_URL = 'https://hv9doulbs3.execute-api.ap-northeast-1.amazonaws.com/prod/events';
@@ -44,25 +46,31 @@ export function EventsPage() {
       <table style={tableStyle}>
         <thead>
           <tr style={{ backgroundColor: '#f5f5f5' }}>
+            <th style={thStyle}>検知日時 (JST)</th>
+            <th style={thStyle}>所有者</th>
+            <th style={thStyle}>端末モデル</th>
             <th style={thStyle}>デバイスID</th>
             <th style={thStyle}>イベント</th>
-            <th style={thStyle}>検知日時 (JST)</th>
           </tr>
         </thead>
         <tbody>
           {loading && events.length === 0 && (
-            <tr><td colSpan={3} style={{ ...tdStyle, textAlign: 'center', color: '#888' }}>読み込み中...</td></tr>
+            <tr><td colSpan={5} style={{ ...tdStyle, textAlign: 'center', color: '#888' }}>読み込み中...</td></tr>
           )}
           {!loading && events.length === 0 && !error && (
-            <tr><td colSpan={3} style={{ ...tdStyle, textAlign: 'center', color: '#888' }}>データがありません</td></tr>
+            <tr><td colSpan={5} style={{ ...tdStyle, textAlign: 'center', color: '#888' }}>データがありません</td></tr>
           )}
           {events.map((ev, i) => (
             <tr key={i} style={{ backgroundColor: i % 2 === 0 ? '#fff' : '#fafafa' }}>
-              <td style={tdStyle}>{ev.deviceId}</td>
+              <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{new Date(ev.timestamp).toLocaleString('ja-JP')}</td>
+              <td style={{ ...tdStyle, color: ev.userName === '未登録' ? '#aaa' : undefined }}>
+                {ev.userName}
+              </td>
+              <td style={tdStyle}>{ev.deviceModel}</td>
+              <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: '12px' }}>{ev.deviceId}</td>
               <td style={{ ...tdStyle, color: ev.category === 'DETECT' ? '#D32F2F' : '#1976D2', fontWeight: 500 }}>
                 {ev.category === 'DETECT' ? '歩行開始 (DETECT)' : '待機に戻る (RELEASE)'}
               </td>
-              <td style={tdStyle}>{new Date(ev.timestamp).toLocaleString('ja-JP')}</td>
             </tr>
           ))}
         </tbody>
