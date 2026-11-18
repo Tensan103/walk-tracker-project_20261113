@@ -42,6 +42,8 @@ export class BackendStack extends cdk.Stack {
       defaultCorsPreflightOptions: {
         allowOrigins: apigateway.Cors.ALL_ORIGINS,
         allowMethods: apigateway.Cors.ALL_METHODS,
+        // Content-Type など必要ヘッダーを明示することで POST/PUT のプリフライトを通す
+        allowHeaders: apigateway.Cors.DEFAULT_HEADERS,
       },
     });
 

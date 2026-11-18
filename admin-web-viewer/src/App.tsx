@@ -9,9 +9,9 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'devices', label: 'デバイス管理' },
 ];
 
-// API Gateway のベース情報 (参照用)
-// BackendStack.ApiUrl = https://4ss98ipt4m.execute-api.ap-northeast-3.amazonaws.com/prod/
-// BackendStack.CloudFrontUrl = https://d2c7vkr5tsw06w.cloudfront.net
+// API Gateway のベース情報 (参照用) — 2026-11-19 再デプロイ後
+// BackendStack.ApiUrl      = https://hv9doulbs3.execute-api.ap-northeast-1.amazonaws.com/prod/
+// BackendStack.CloudFrontUrl = https://d372yn7ynb2z78.cloudfront.net
 
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>('events');

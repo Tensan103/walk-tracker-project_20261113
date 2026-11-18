@@ -82,7 +82,7 @@ class SensorTrackingService : Service() {
     // SYSTEM_ALERT_WINDOW オーバーレイ View の参照 (表示中は非 null)
     private var overlayView: android.view.View? = null
 
-    private val awsApiUrl = "https://4ss98ipt4m.execute-api.ap-northeast-3.amazonaws.com/prod/events"
+    private val awsApiUrl = "https://hv9doulbs3.execute-api.ap-northeast-1.amazonaws.com/prod/events"
 
     companion object {
         private const val TAG = "SensorTrackingService"

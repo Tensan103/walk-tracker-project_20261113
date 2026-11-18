@@ -11,7 +11,7 @@ type Device = {
 type NewForm = { deviceId: string; userName: string; deviceModel: string };
 type EditForm = { userName: string; deviceModel: string };
 
-const BASE = 'https://4ss98ipt4m.execute-api.ap-northeast-3.amazonaws.com/prod';
+const BASE = 'https://hv9doulbs3.execute-api.ap-northeast-1.amazonaws.com/prod';
 const DEVICES_URL = `${BASE}/devices`;
 
 export function DevicesPage() {

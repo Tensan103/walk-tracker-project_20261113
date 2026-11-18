@@ -6,7 +6,7 @@ type WalkEvent = {
   category: string;
 };
 
-const EVENTS_URL = 'https://4ss98ipt4m.execute-api.ap-northeast-3.amazonaws.com/prod/events';
+const EVENTS_URL = 'https://hv9doulbs3.execute-api.ap-northeast-1.amazonaws.com/prod/events';
 
 export function EventsPage() {
   const [events, setEvents] = useState<WalkEvent[]>([]);
