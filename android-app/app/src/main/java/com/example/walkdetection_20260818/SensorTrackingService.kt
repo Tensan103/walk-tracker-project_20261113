@@ -204,6 +204,7 @@ class SensorTrackingService : Service() {
                 event ?: return
                 val tSec = SettingsRepository.getTSec(this@SensorTrackingService)
                 val sSteps = SettingsRepository.getSSteps(this@SensorTrackingService)
+                val rSec = SettingsRepository.getRSec(this@SensorTrackingService)
 
                 when (event.sensor.type) {
                     Sensor.TYPE_ACCELEROMETER -> {
@@ -215,7 +216,7 @@ class SensorTrackingService : Service() {
                     }
                     Sensor.TYPE_STEP_DETECTOR -> {
                         if (event.values[0] == 1.0f) {
-                            handleStep(event.timestamp, tSec, sSteps)
+                            handleStep(event.timestamp, tSec, sSteps, rSec)
                         }
                     }
                 }
@@ -237,7 +238,12 @@ class SensorTrackingService : Service() {
     // Walking detection (スライディングウィンドウ)
     // -------------------------------------------------------------------------
 
-    private fun handleStep(eventTimestampNs: Long, tSec: Int, sSteps: Int) {
+    /**
+     * @param tSec  スライディングウィンドウの幅 (秒)。この時間内に sSteps 歩で「検知」と判定する。
+     * @param sSteps 検知に必要な歩数。
+     * @param rSec  歩行検知後、最後の歩行から何秒経過したら「監視中」に戻すか (解除タイムアウト)。
+     */
+    private fun handleStep(eventTimestampNs: Long, tSec: Int, sSteps: Int, rSec: Int) {
         stepCount += 1
         SensorStateRepository.updateStepCount(stepCount)
 
@@ -248,6 +254,7 @@ class SensorTrackingService : Service() {
 
         val currentTimeMs = System.currentTimeMillis()
         stepTimestamps.add(currentTimeMs)
+        // tSec ウィンドウより古いタイムスタンプを除去（検知判定用）
         stepTimestamps.removeAll { currentTimeMs - it > (tSec * 1000L) }
 
         if (stepTimestamps.size >= sSteps) {
@@ -257,9 +264,10 @@ class SensorTrackingService : Service() {
             }
         }
 
+        // 解除タイムアウト: 最後の歩行から rSec 秒後に「監視中」へ戻す
         walkingTimeoutJob?.cancel()
         walkingTimeoutJob = serviceScope.launch {
-            delay(tSec.seconds)
+            delay(rSec.seconds)   // ← tSec ではなく rSec を使用
             SensorStateRepository.updateIsWalking(false)
             stepTimestamps.clear()
             sendEventToAWS("RELEASE")

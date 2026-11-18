@@ -40,6 +40,7 @@ fun MainScreen(onNavigateToSettings: () -> Unit) {
     // 設定値の読み取り (表示用のみ)
     val tSec = remember { SettingsRepository.getTSec(context) }
     val sSteps = remember { SettingsRepository.getSSteps(context) }
+    val rSec = remember { SettingsRepository.getRSec(context) }
 
     Scaffold(
         topBar = {
@@ -109,7 +110,7 @@ fun MainScreen(onNavigateToSettings: () -> Unit) {
 
             // ── 判定条件の補足表示 ─────────────────────────────────────
             Text(
-                text = "判定条件: ${tSec}秒間に ${sSteps}歩",
+                text = "検知: ${tSec}秒間に ${sSteps}歩  /  解除: ${rSec}秒",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

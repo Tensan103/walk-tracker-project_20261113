@@ -37,8 +37,12 @@ object SettingsRepository {
     private const val PREF_NAME = "walk_detection_prefs"
     private const val KEY_T_SEC = "t_sec"
     private const val KEY_S_STEPS = "s_steps"
+    private const val KEY_R_SEC = "r_sec"
+
     const val DEFAULT_T_SEC = 5
     const val DEFAULT_S_STEPS = 3
+    /** 歩行検知後、「監視中」に戻るまでのデフォルト秒数 */
+    const val DEFAULT_R_SEC = 10
 
     fun getTSec(context: Context): Int {
         val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
@@ -50,11 +54,18 @@ object SettingsRepository {
         return prefs.getInt(KEY_S_STEPS, DEFAULT_S_STEPS)
     }
 
-    fun saveSettings(context: Context, tSec: Int, sSteps: Int) {
+    /** 歩行検知後、「監視中」に戻るまでの秒数 (Release timeout) */
+    fun getRSec(context: Context): Int {
+        val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        return prefs.getInt(KEY_R_SEC, DEFAULT_R_SEC)
+    }
+
+    fun saveSettings(context: Context, tSec: Int, sSteps: Int, rSec: Int) {
         val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
         prefs.edit()
             .putInt(KEY_T_SEC, tSec)
             .putInt(KEY_S_STEPS, sSteps)
+            .putInt(KEY_R_SEC, rSec)
             .apply()
     }
 }
@@ -194,11 +205,13 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
     // SharedPreferences から現在値を読み込む (NavHost 経由でパラメータを渡す必要がなくなる)
     var tSecText by remember { mutableStateOf(SettingsRepository.getTSec(context).toString()) }
     var sStepsText by remember { mutableStateOf(SettingsRepository.getSSteps(context).toString()) }
+    var rSecText by remember { mutableStateOf(SettingsRepository.getRSec(context).toString()) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     fun save() {
         val parsedTSec = tSecText.toIntOrNull()
         val parsedSSteps = sStepsText.toIntOrNull()
+        val parsedRSec = rSecText.toIntOrNull()
 
         if (parsedTSec == null || parsedTSec <= 0) {
             errorMessage = "判定時間(T)には1以上の正の整数を入力してください"
@@ -208,9 +221,13 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
             errorMessage = "必要歩数(S)には1以上の正の整数を入力してください"
             return
         }
+        if (parsedRSec == null || parsedRSec <= 0) {
+            errorMessage = "解除時間(R)には1以上の正の整数を入力してください"
+            return
+        }
 
         errorMessage = null
-        SettingsRepository.saveSettings(context, parsedTSec, parsedSSteps)
+        SettingsRepository.saveSettings(context, parsedTSec, parsedSSteps, parsedRSec)
         Toast.makeText(context, "設定を保存しました", Toast.LENGTH_SHORT).show()
         onNavigateBack()
     }
@@ -218,10 +235,12 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
     fun resetToDefault() {
         val defaultT = SettingsRepository.DEFAULT_T_SEC
         val defaultS = SettingsRepository.DEFAULT_S_STEPS
+        val defaultR = SettingsRepository.DEFAULT_R_SEC
         tSecText = defaultT.toString()
         sStepsText = defaultS.toString()
+        rSecText = defaultR.toString()
         errorMessage = null
-        SettingsRepository.saveSettings(context, defaultT, defaultS)
+        SettingsRepository.saveSettings(context, defaultT, defaultS, defaultR)
         Toast.makeText(context, "デフォルト設定に戻しました", Toast.LENGTH_SHORT).show()
     }
 
@@ -246,7 +265,8 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(
-                text = "歩行判定に使用する秒数(T)と歩数(S)を設定できます。",
+                text = "歩行判定パラメータを設定できます。\n" +
+                       "T秒間にS歩で「検知」、最後の歩行からR秒後に「解除」します。",
                 style = MaterialTheme.typography.bodyMedium
             )
 
@@ -271,6 +291,19 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
                 },
                 label = { Text("必要歩数 S (歩)") },
                 supportingText = { Text("デフォルト: ${SettingsRepository.DEFAULT_S_STEPS} 歩") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            OutlinedTextField(
+                value = rSecText,
+                onValueChange = {
+                    rSecText = it
+                    errorMessage = null
+                },
+                label = { Text("解除時間 R (秒)") },
+                supportingText = { Text("歩行検知後、「監視中」に戻るまでの秒数 / デフォルト: ${SettingsRepository.DEFAULT_R_SEC} 秒") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
