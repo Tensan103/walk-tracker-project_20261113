@@ -42,7 +42,7 @@ object SettingsRepository {
     const val DEFAULT_T_SEC = 5
     const val DEFAULT_S_STEPS = 3
     /** 歩行検知後、「監視中」に戻るまでのデフォルト秒数 */
-    const val DEFAULT_R_SEC = 10
+    const val DEFAULT_R_SEC = 5
 
     fun getTSec(context: Context): Int {
         val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
