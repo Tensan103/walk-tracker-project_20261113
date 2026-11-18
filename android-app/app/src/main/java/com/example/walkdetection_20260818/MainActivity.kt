@@ -11,7 +11,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.semantics.Role
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.History
@@ -269,123 +273,139 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
             )
         }
     ) { innerPadding ->
+        // 外側 Column: コンテンツ(スクロール) + ボタン(固定) の2段構成
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(
-                text = "歩行判定パラメータを設定できます。\n" +
-                       "T秒間にS歩で「検知」、最後の歩行からR秒後に「解除」します。",
-                style = MaterialTheme.typography.bodyMedium
-            )
-
-            OutlinedTextField(
-                value = tSecText,
-                onValueChange = {
-                    tSecText = it
-                    errorMessage = null
-                },
-                label = { Text("判定保持時間 T (秒)") },
-                supportingText = { Text("デフォルト: ${SettingsRepository.DEFAULT_T_SEC} 秒") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            OutlinedTextField(
-                value = sStepsText,
-                onValueChange = {
-                    sStepsText = it
-                    errorMessage = null
-                },
-                label = { Text("必要歩数 S (歩)") },
-                supportingText = { Text("デフォルト: ${SettingsRepository.DEFAULT_S_STEPS} 歩") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            OutlinedTextField(
-                value = rSecText,
-                onValueChange = {
-                    rSecText = it
-                    errorMessage = null
-                },
-                label = { Text("解除時間 R (秒)") },
-                supportingText = { Text("歩行検知後、「監視中」に戻るまでの秒数 / デフォルト: ${SettingsRepository.DEFAULT_R_SEC} 秒") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            if (errorMessage != null) {
+            // ── スクロール可能なコンテンツ領域 ───────────────────────
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 Text(
-                    text = errorMessage!!,
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall
+                    text = "歩行判定パラメータを設定できます。\n" +
+                           "T秒間にS歩で「検知」、最後の歩行からR秒後に「解除」します。",
+                    style = MaterialTheme.typography.bodyMedium
                 )
-            }
 
-            HorizontalDivider()
+                OutlinedTextField(
+                    value = tSecText,
+                    onValueChange = {
+                        tSecText = it
+                        errorMessage = null
+                    },
+                    label = { Text("判定保持時間 T (秒)") },
+                    supportingText = { Text("デフォルト: ${SettingsRepository.DEFAULT_T_SEC} 秒") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
 
-            Text(
-                text = "検知時の警告設定",
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Text(
-                text = "歩行を検知したときの動作を選択します。",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+                OutlinedTextField(
+                    value = sStepsText,
+                    onValueChange = {
+                        sStepsText = it
+                        errorMessage = null
+                    },
+                    label = { Text("必要歩数 S (歩)") },
+                    supportingText = { Text("デフォルト: ${SettingsRepository.DEFAULT_S_STEPS} 歩") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
 
-            val alertOptions = listOf(
-                AlertType.NONE to "なし",
-                AlertType.TOAST to "トーストで通知",
-                AlertType.FORCE_FOREGROUND to "検知画面を強制表示 (Full-Screen Intent)"
-            )
-            alertOptions.forEach { (type, label) ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    RadioButton(
-                        selected = alertType == type,
-                        onClick = { SensorStateRepository.updateAlertType(type) }
-                    )
+                OutlinedTextField(
+                    value = rSecText,
+                    onValueChange = {
+                        rSecText = it
+                        errorMessage = null
+                    },
+                    label = { Text("解除時間 R (秒)") },
+                    supportingText = { Text("歩行検知後、「監視中」に戻るまでの秒数 / デフォルト: ${SettingsRepository.DEFAULT_R_SEC} 秒") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                if (errorMessage != null) {
                     Text(
-                        text = label,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(start = 4.dp)
+                        text = errorMessage!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
                     )
+                }
+
+                HorizontalDivider()
+
+                Text(
+                    text = "検知時の警告設定",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = "歩行を検知したときの動作を選択します。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                val alertOptions = listOf(
+                    AlertType.NONE to "なし",
+                    AlertType.TOAST to "トーストで通知",
+                    AlertType.FORCE_FOREGROUND to "検知画面を強制表示 (Full-Screen Intent)"
+                )
+                Column {
+                    alertOptions.forEach { (type, label) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .selectable(
+                                    selected = alertType == type,
+                                    onClick = { SensorStateRepository.updateAlertType(type) },
+                                    role = Role.RadioButton
+                                )
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = alertType == type,
+                                onClick = null  // 親 Row が onCick を処理
+                            )
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(start = 8.dp)
+                            )
+                        }
+                    }
                 }
             }
 
+            // ── 画面下部に固定されたボタン ──────────────────────────
             HorizontalDivider()
-
-            Spacer(modifier = Modifier.weight(1f))
-
-            Button(
-                onClick = { save() },
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("設定を保存")
-            }
-
-            OutlinedButton(
-                onClick = { resetToDefault() },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp)
-            ) {
-                Text("デフォルトに戻す")
+                Button(
+                    onClick = { save() },
+                    modifier = Modifier.fillMaxWidth().height(50.dp)
+                ) {
+                    Text("設定を保存")
+                }
+                OutlinedButton(
+                    onClick = { resetToDefault() },
+                    modifier = Modifier.fillMaxWidth().height(50.dp)
+                ) {
+                    Text("デフォルトに戻す")
+                }
             }
         }
     }
