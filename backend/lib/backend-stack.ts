@@ -21,7 +21,7 @@ export class BackendStack extends cdk.Stack {
 
     // 2. Lambda: データ書き込み用
     const writeLambda = new lambda.Function(this, 'WriteEventLambda', {
-      runtime: lambda.Runtime.NODEJS_18_X,
+      runtime: lambda.Runtime.NODEJS_22_X,
       handler: 'write.handler',
       code: lambda.Code.fromAsset('lambda'), // lambdaディレクトリにコードを配置
       environment: { TABLE_NAME: table.tableName },
@@ -30,7 +30,7 @@ export class BackendStack extends cdk.Stack {
 
     // 3. Lambda: データ読み込み用 (ビューワー向け)
     const readLambda = new lambda.Function(this, 'ReadEventLambda', {
-      runtime: lambda.Runtime.NODEJS_18_X,
+      runtime: lambda.Runtime.NODEJS_22_X,
       handler: 'read.handler',
       code: lambda.Code.fromAsset('lambda'),
       environment: { TABLE_NAME: table.tableName },
@@ -61,7 +61,7 @@ export class BackendStack extends cdk.Stack {
 
     // 6. devicesApi Lambda (CRUD)
     const devicesApiLambda = new lambda.Function(this, 'DevicesApiLambda', {
-      runtime: lambda.Runtime.NODEJS_18_X,
+      runtime: lambda.Runtime.NODEJS_22_X,
       handler: 'devicesApi.handler',
       code: lambda.Code.fromAsset('lambda'),
       environment: { TABLE_NAME: devicesTable.tableName },
