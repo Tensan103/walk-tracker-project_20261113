@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { authFetch } from '../utils/apiClient';
 
 type Device = {
   deviceId: string;
@@ -34,7 +35,7 @@ export function DevicesPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(DEVICES_URL);
+      const res = await authFetch(DEVICES_URL);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data: Device[] = await res.json();
       setDevices(data.sort((a, b) => b.createdAt - a.createdAt));
@@ -50,9 +51,8 @@ export function DevicesPage() {
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch(DEVICES_URL, {
+      const res = await authFetch(DEVICES_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newForm),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -69,9 +69,8 @@ export function DevicesPage() {
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch(DEVICES_URL, {
+      const res = await authFetch(DEVICES_URL, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ deviceId, ...editForm }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -88,7 +87,7 @@ export function DevicesPage() {
     if (!window.confirm(`デバイス「${deviceId}」を削除しますか？`)) return;
     setError(null);
     try {
-      const res = await fetch(`${DEVICES_URL}/${encodeURIComponent(deviceId)}`, { method: 'DELETE' });
+      const res = await authFetch(`${DEVICES_URL}/${encodeURIComponent(deviceId)}`, { method: 'DELETE' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       await fetchDevices();
     } catch (e) {

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Pagination } from '../components/Pagination';
+import { authFetch } from '../utils/apiClient';
 import {
   compareNullable,
   formatDuration,
@@ -41,7 +42,7 @@ export function EventsPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(EVENTS_URL);
+      const res = await authFetch(EVENTS_URL);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data: WalkEvent[] = await res.json();
       setEvents(data);

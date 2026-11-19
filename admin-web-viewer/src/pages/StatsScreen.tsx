@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Pagination } from '../components/Pagination';
+import { authFetch } from '../utils/apiClient';
 import { aggregateDeviceStats, getCurrentMonthRangeJst } from '../utils/eventProcessing';
 import type { Device, DeviceStat, WalkEvent } from '../utils/eventProcessing';
 
@@ -28,7 +29,7 @@ export function StatsScreen() {
     setLoading(true);
     setError(null);
     try {
-      const [eventsRes, devicesRes] = await Promise.all([fetch(EVENTS_URL), fetch(DEVICES_URL)]);
+      const [eventsRes, devicesRes] = await Promise.all([authFetch(EVENTS_URL), authFetch(DEVICES_URL)]);
       if (!eventsRes.ok) throw new Error(`events: HTTP ${eventsRes.status}`);
       if (!devicesRes.ok) throw new Error(`devices: HTTP ${devicesRes.status}`);
       const [eventsData, devicesData]: [WalkEvent[], Device[]] = await Promise.all([
