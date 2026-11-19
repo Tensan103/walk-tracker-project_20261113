@@ -27,6 +27,10 @@ class ScreenStateReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
             Intent.ACTION_SCREEN_ON -> {
+                if (!SensorStateRepository.isMonitoringEnabled.value) {
+                    Log.d(TAG, "画面ON: 監視無効のためサービスを起動しません")
+                    return
+                }
                 Log.d(TAG, "画面ON: SensorTrackingService を起動します")
                 val serviceIntent = Intent(context, SensorTrackingService::class.java).apply {
                     action = SensorTrackingService.ACTION_START

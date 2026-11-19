@@ -7,6 +7,9 @@ import android.os.Build
 import android.os.PowerManager
 import android.util.Log
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
 /**
  * アプリケーションクラス。
@@ -21,10 +24,14 @@ import androidx.core.content.ContextCompat
  */
 class WalkTrackerApplication : Application() {
 
+    /** サービスのライフサイクルを超えて生存する長寿命スコープ。onDestroy() での RELEASE 送信に使用する。 */
+    val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     private val screenStateReceiver = ScreenStateReceiver()
 
     override fun onCreate() {
         super.onCreate()
+        SensorStateRepository.init(this)  // SharedPreferences から AlertType・監視フラグを復元
         registerScreenStateReceiver()
         startServiceIfScreenIsOn()
     }
@@ -54,7 +61,7 @@ class WalkTrackerApplication : Application() {
      */
     private fun startServiceIfScreenIsOn() {
         val powerManager = getSystemService(PowerManager::class.java)
-        if (powerManager.isInteractive) {
+        if (powerManager.isInteractive && SensorStateRepository.isMonitoringEnabled.value) {
             Log.d(TAG, "起動時に画面ON を検出: SensorTrackingService を起動します")
             val intent = Intent(this, SensorTrackingService::class.java).apply {
                 action = SensorTrackingService.ACTION_START

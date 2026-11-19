@@ -144,6 +144,26 @@ class SensorTrackingService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        // 歩行検知中に停止された場合、RELEASE を強制送信して履歴を記録する
+        if (SensorStateRepository.isWalking.value) {
+            val releaseMs = System.currentTimeMillis()
+            val detectMs = detectStartMs
+            if (detectMs != null) {
+                val durationSec = ((releaseMs - detectMs) / 1000L).toInt().coerceAtLeast(0)
+                val stepsWalked = detectStartStepCount?.let { stepCount - it }?.coerceAtLeast(0) ?: 0
+                SensorStateRepository.addWalkHistoryItem(
+                    WalkHistoryItem(detectMs, releaseMs, durationSec, stepsWalked)
+                )
+                detectStartMs = null
+                detectStartStepCount = null
+            }
+            // serviceScope はこの後 cancel するため、プロセス寿命の applicationScope で送信する
+            (applicationContext as WalkTrackerApplication).applicationScope.launch {
+                sendEventToAWS("RELEASE")
+            }
+            Log.d(TAG, "onDestroy: 検知中のため RELEASE を強制送信")
+        }
+
         // センサー解除
         sensorEventListener?.let { sensorManager.unregisterListener(it) }
         walkingTimeoutJob?.cancel()
@@ -167,6 +187,12 @@ class SensorTrackingService : Service() {
 
         super.onDestroy()
         Log.d(TAG, "SensorTrackingService が停止しました")
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // スワイプアウト時もサービスを停止しない。START_STICKY により OS が再起動する。
+        Log.d(TAG, "タスクが削除されましたが、サービスは継続します")
+        super.onTaskRemoved(rootIntent)
     }
 
     // -------------------------------------------------------------------------
