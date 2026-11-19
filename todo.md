@@ -92,10 +92,8 @@ AIエージェントを使った開発では、「一度に複数のコンポー
 
 ### Phase 3: セキュリティと自動化（本番運用への準備）
 目的：システムをセキュアにし、CI/CDで運用を自動化する。
-
-8. Backend/Web: Cognitoを用いた管理画面のログイン認証＆API保護
-9. Android/Backend: AndroidからのAPI認証実装（開発用APIキー → 本格化）
-10. Web/Backend: CI/CDパイプライン構築（GitHub Actions等でS3デプロイ自動化）
-11. Web: 画面デザインの整理（Tailwind CSSやMUI等の適用）
+1. Backend/Web: Cognitoを用いた管理画面のログイン認証＆API保護
+2. Android/Backend: AndroidからのAPI認証実装（開発用APIキー → 本格化）
+3.  Web/Backend: CI/CDパイプライン構築（GitHub Actions等でS3デプロイ自動化）
 
 claude --resume 28f1acae-ccc0-4296-b5eb-13fba38dfa4f
