@@ -1,0 +1,205 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  id="Definitions_WalkTracker"
+                  targetNamespace="http://example.com/walk-tracker/bpmn">
+
+  <bpmn:collaboration id="Collaboration_WalkTracker">
+    <bpmn:participant id="Participant_System" name="歩きスマホ検知システム 業務・処理フロー" processRef="Process_WalkTracker" />
+  </bpmn:collaboration>
+
+  <bpmn:process id="Process_WalkTracker" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_1">
+      <bpmn:lane id="Lane_Android" name="Androidアプリ (検知端末)">
+        <bpmn:flowNodeRef>StartEvent_ScreenOn</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_MonitorWalk</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_AlertAndDetect</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_StopOrOff</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ReleaseAndSend</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_AWS" name="AWSバックエンド (API Gateway / Lambda / DynamoDB)">
+        <bpmn:flowNodeRef>Task_VerifyApiKeyAndSave</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_AuthCognitoAndJoin</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Admin" name="管理者 (Web管理画面)">
+        <bpmn:flowNodeRef>Task_AdminLogin</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ViewTimelineStats</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Complete</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+
+    <!-- Android Lane -->
+    <bpmn:startEvent id="StartEvent_ScreenOn" name="画面ON&#xa;(監視有効)">
+      <bpmn:outgoing>Flow_1</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <bpmn:task id="Task_MonitorWalk" name="センサー監視&#xa;(歩数・時間ウィンドウ判定)">
+      <bpmn:incoming>Flow_1</bpmn:incoming>
+      <bpmn:outgoing>Flow_2</bpmn:outgoing>
+    </bpmn:task>
+
+    <bpmn:task id="Task_AlertAndDetect" name="警告表示 &amp;&#xa;DETECT送信&#xa;(x-api-key)">
+      <bpmn:incoming>Flow_2</bpmn:incoming>
+      <bpmn:outgoing>Flow_3</bpmn:outgoing>
+      <bpmn:outgoing>Flow_ToAwsDetect</bpmn:outgoing>
+    </bpmn:task>
+
+    <bpmn:exclusiveGateway id="Gateway_StopOrOff" name="解除トリガー?">
+      <bpmn:incoming>Flow_3</bpmn:incoming>
+      <bpmn:outgoing>Flow_StopWalk</bpmn:outgoing>
+      <bpmn:outgoing>Flow_ScreenOff</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:task id="Task_ReleaseAndSend" name="警告解除 &amp;&#xa;RELEASE送信&#xa;(長寿命Scope)">
+      <bpmn:incoming>Flow_StopWalk</bpmn:incoming>
+      <bpmn:incoming>Flow_ScreenOff</bpmn:incoming>
+      <bpmn:outgoing>Flow_ToAwsRelease</bpmn:outgoing>
+    </bpmn:task>
+
+    <!-- AWS Lane -->
+    <bpmn:task id="Task_VerifyApiKeyAndSave" name="API Key検証 &amp;&#xa;WalkEventsTableへ保存">
+      <bpmn:incoming>Flow_ToAwsDetect</bpmn:incoming>
+      <bpmn:incoming>Flow_ToAwsRelease</bpmn:incoming>
+      <bpmn:outgoing>Flow_ToAdmin</bpmn:outgoing>
+    </bpmn:task>
+
+    <bpmn:task id="Task_AuthCognitoAndJoin" name="Cognito JWT検証 &amp;&#xa;DevicesTable結合返却">
+      <bpmn:incoming>Flow_RequestEvents</bpmn:incoming>
+      <bpmn:outgoing>Flow_ReturnEvents</bpmn:outgoing>
+    </bpmn:task>
+
+    <!-- Admin Lane -->
+    <bpmn:task id="Task_AdminLogin" name="Cognitoログイン&#xa;(CloudFront / React)">
+      <bpmn:incoming>Flow_ToAdmin</bpmn:incoming>
+      <bpmn:outgoing>Flow_RequestEvents</bpmn:outgoing>
+    </bpmn:task>
+
+    <bpmn:task id="Task_ViewTimelineStats" name="タイムライン(ペアリング)&#xa;・実績(JST集計)確認">
+      <bpmn:incoming>Flow_ReturnEvents</bpmn:incoming>
+      <bpmn:outgoing>Flow_End</bpmn:outgoing>
+    </bpmn:task>
+
+    <bpmn:endEvent id="EndEvent_Complete" name="確認完了">
+      <bpmn:incoming>Flow_End</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- Sequence Flows -->
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_ScreenOn" targetRef="Task_MonitorWalk" />
+    <bpmn:sequenceFlow id="Flow_2" name="しきい値超過" sourceRef="Task_MonitorWalk" targetRef="Task_AlertAndDetect" />
+    <bpmn:sequenceFlow id="Flow_3" sourceRef="Task_AlertAndDetect" targetRef="Gateway_StopOrOff" />
+    <bpmn:sequenceFlow id="Flow_StopWalk" name="歩行停止" sourceRef="Gateway_StopOrOff" targetRef="Task_ReleaseAndSend" />
+    <bpmn:sequenceFlow id="Flow_ScreenOff" name="画面OFF (onDestroy)" sourceRef="Gateway_StopOrOff" targetRef="Task_ReleaseAndSend" />
+    <bpmn:sequenceFlow id="Flow_ToAwsDetect" name="POST DETECT" sourceRef="Task_AlertAndDetect" targetRef="Task_VerifyApiKeyAndSave" />
+    <bpmn:sequenceFlow id="Flow_ToAwsRelease" name="POST RELEASE" sourceRef="Task_ReleaseAndSend" targetRef="Task_VerifyApiKeyAndSave" />
+    <bpmn:sequenceFlow id="Flow_ToAdmin" name="データ蓄積" sourceRef="Task_VerifyApiKeyAndSave" targetRef="Task_AdminLogin" />
+    <bpmn:sequenceFlow id="Flow_RequestEvents" name="GET /events (JWT)" sourceRef="Task_AdminLogin" targetRef="Task_AuthCognitoAndJoin" />
+    <bpmn:sequenceFlow id="Flow_ReturnEvents" name="結合データ" sourceRef="Task_AuthCognitoAndJoin" targetRef="Task_ViewTimelineStats" />
+    <bpmn:sequenceFlow id="Flow_End" sourceRef="Task_ViewTimelineStats" targetRef="EndEvent_Complete" />
+  </bpmn:process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Collaboration_WalkTracker">
+      <bpmndi:BPMNShape id="Participant_System_di" bpmnElement="Participant_System" isHorizontal="true">
+        <dc:Bounds x="120" y="60" width="960" height="510" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Android_di" bpmnElement="Lane_Android" isHorizontal="true">
+        <dc:Bounds x="150" y="60" width="930" height="170" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_AWS_di" bpmnElement="Lane_AWS" isHorizontal="true">
+        <dc:Bounds x="150" y="230" width="930" height="170" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Admin_di" bpmnElement="Lane_Admin" isHorizontal="true">
+        <dc:Bounds x="150" y="400" width="930" height="170" />
+      </bpmndi:BPMNShape>
+
+      <!-- Nodes -->
+      <bpmndi:BPMNShape id="StartEvent_ScreenOn_di" bpmnElement="StartEvent_ScreenOn">
+        <dc:Bounds x="192" y="122" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_MonitorWalk_di" bpmnElement="Task_MonitorWalk">
+        <dc:Bounds x="280" y="100" width="130" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_AlertAndDetect_di" bpmnElement="Task_AlertAndDetect">
+        <dc:Bounds x="470" y="100" width="130" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_StopOrOff_di" bpmnElement="Gateway_StopOrOff" isMarkerVisible="true">
+        <dc:Bounds x="665" y="115" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_ReleaseAndSend_di" bpmnElement="Task_ReleaseAndSend">
+        <dc:Bounds x="810" y="100" width="130" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_VerifyApiKeyAndSave_di" bpmnElement="Task_VerifyApiKeyAndSave">
+        <dc:Bounds x="470" y="275" width="160" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_AuthCognitoAndJoin_di" bpmnElement="Task_AuthCognitoAndJoin">
+        <dc:Bounds x="740" y="275" width="160" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_AdminLogin_di" bpmnElement="Task_AdminLogin">
+        <dc:Bounds x="470" y="445" width="160" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_ViewTimelineStats_di" bpmnElement="Task_ViewTimelineStats">
+        <dc:Bounds x="740" y="445" width="160" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Complete_di" bpmnElement="EndEvent_Complete">
+        <dc:Bounds x="962" y="467" width="36" height="36" />
+      </bpmndi:BPMNShape>
+
+      <!-- Edges -->
+      <bpmndi:BPMNEdge id="Flow_1_di" bpmnElement="Flow_1">
+        <di:waypoint x="228" y="140" />
+        <di:waypoint x="280" y="140" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_2_di" bpmnElement="Flow_2">
+        <di:waypoint x="410" y="140" />
+        <di:waypoint x="470" y="140" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_3_di" bpmnElement="Flow_3">
+        <di:waypoint x="600" y="140" />
+        <di:waypoint x="665" y="140" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_StopWalk_di" bpmnElement="Flow_StopWalk">
+        <di:waypoint x="715" y="140" />
+        <di:waypoint x="810" y="140" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ScreenOff_di" bpmnElement="Flow_ScreenOff">
+        <di:waypoint x="690" y="165" />
+        <di:waypoint x="690" y="205" />
+        <di:waypoint x="875" y="205" />
+        <di:waypoint x="875" y="180" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ToAwsDetect_di" bpmnElement="Flow_ToAwsDetect">
+        <di:waypoint x="535" y="180" />
+        <di:waypoint x="535" y="275" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ToAwsRelease_di" bpmnElement="Flow_ToAwsRelease">
+        <di:waypoint x="875" y="180" />
+        <di:waypoint x="875" y="250" />
+        <di:waypoint x="580" y="250" />
+        <di:waypoint x="580" y="275" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ToAdmin_di" bpmnElement="Flow_ToAdmin">
+        <di:waypoint x="550" y="355" />
+        <di:waypoint x="550" y="445" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_RequestEvents_di" bpmnElement="Flow_RequestEvents">
+        <di:waypoint x="630" y="485" />
+        <di:waypoint x="685" y="485" />
+        <di:waypoint x="685" y="315" />
+        <di:waypoint x="740" y="315" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ReturnEvents_di" bpmnElement="Flow_ReturnEvents">
+        <di:waypoint x="820" y="355" />
+        <di:waypoint x="820" y="445" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_End_di" bpmnElement="Flow_End">
+        <di:waypoint x="900" y="485" />
+        <di:waypoint x="962" y="485" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
