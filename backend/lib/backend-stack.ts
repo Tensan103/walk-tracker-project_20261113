@@ -42,15 +42,46 @@ export class BackendStack extends cdk.Stack {
       defaultCorsPreflightOptions: {
         allowOrigins: apigateway.Cors.ALL_ORIGINS,
         allowMethods: apigateway.Cors.ALL_METHODS,
+        // Content-Type など必要ヘッダーを明示することで POST/PUT のプリフライトを通す
+        allowHeaders: apigateway.Cors.DEFAULT_HEADERS,
       },
     });
 
-    // エンドポイント作成 (/events)
+    // /events エンドポイント
     const events = api.root.addResource('events');
     events.addMethod('POST', new apigateway.LambdaIntegration(writeLambda));
     events.addMethod('GET', new apigateway.LambdaIntegration(readLambda));
 
-    // 5. 閲覧用Reactアプリを配置するS3とCloudFront
+    // 5. DevicesTable (端末情報と所有者の統合管理)
+    const devicesTable = new dynamodb.Table(this, 'DevicesTable', {
+      partitionKey: { name: 'deviceId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    // 6. devicesApi Lambda (CRUD)
+    const devicesApiLambda = new lambda.Function(this, 'DevicesApiLambda', {
+      runtime: lambda.Runtime.NODEJS_18_X,
+      handler: 'devicesApi.handler',
+      code: lambda.Code.fromAsset('lambda'),
+      environment: { TABLE_NAME: devicesTable.tableName },
+    });
+    devicesTable.grantReadWriteData(devicesApiLambda);
+
+    // readLambda に DevicesTable の読み取り権限と環境変数を追加
+    devicesTable.grantReadData(readLambda);
+    readLambda.addEnvironment('DEVICES_TABLE_NAME', devicesTable.tableName);
+
+    // /devices エンドポイント (GET, POST, PUT)
+    const devices = api.root.addResource('devices');
+    devices.addMethod('GET',  new apigateway.LambdaIntegration(devicesApiLambda));
+    devices.addMethod('POST', new apigateway.LambdaIntegration(devicesApiLambda));
+    devices.addMethod('PUT',  new apigateway.LambdaIntegration(devicesApiLambda));
+    // /devices/{deviceId} (DELETE)
+    const deviceWithId = devices.addResource('{deviceId}');
+    deviceWithId.addMethod('DELETE', new apigateway.LambdaIntegration(devicesApiLambda));
+
+    // 7. 閲覧用Reactアプリを配置するS3とCloudFront
     const websiteBucket = new s3.Bucket(this, 'ViewerAppBucket', {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       autoDeleteObjects: true,

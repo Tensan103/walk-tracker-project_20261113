@@ -27,7 +27,7 @@
   - [x] バックグラウンド実行化
   - [x] パラメータ設定（管理者設定？見せる？範囲指定？）
   - [x] 検知条件の設定（歩数，秒数，解除の秒数）
-  - [ ] 警告表示3種(トースト，ポップ通知，フォアグラウンド強制移動)フォアはFull-Screen Intent＋High Priority Notification（SYSTEM_ALERT_WINDOWも候補だが，権限周りが煩雑なので回避）
+  - [x] 警告表示4種(トースト，ポップ通知，フォアグラウンド強制移動)フォアはFull-Screen Intent＋High Priority Notification（SYSTEM_ALERT_WINDOWも候補だが，権限周りが煩雑なので回避）
 
 ### その他作業（(AI対象外，手作業）
 - [ ] EN環境移植
@@ -75,8 +75,8 @@ AIエージェントを使った開発では、「一度に複数のコンポー
 ### Phase 2: 管理基盤の構築（DB正規化とCRUD）
 目的：ただの生ログではなく、「誰のどの端末か」を管理できる基盤を作る。
 
-1. Backend: DynamoDBのテーブル設計見直し（ユーザーテーブル、デバイステーブルの追加）
-2. Backend: CRUD用のLambda/API Gatewayエンドポイント追加
+1. [x] Backend: DynamoDBのテーブル設計見直し（ユーザーテーブル、デバイステーブルの追加）
+2. [x] Backend: CRUD用のLambda/API Gatewayエンドポイント追加
 3. Web: スマートフォンとユーザー名の登録・編集・削除画面
 4. Web: 検知履歴一覧画面（デバイス名や所有者を結合して表示）
 
