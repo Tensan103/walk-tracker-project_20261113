@@ -8,7 +8,9 @@ type WalkEvent = {
   deviceModel: string;
 };
 
-const EVENTS_URL = 'https://hv9doulbs3.execute-api.ap-northeast-1.amazonaws.com/prod/events';
+const _base = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
+if (!_base) console.warn('[EventsPage] VITE_API_URL is not set. Copy .env.example to .env.local.');
+const EVENTS_URL = `${_base}/events`;
 
 export function EventsPage() {
   const [events, setEvents] = useState<WalkEvent[]>([]);

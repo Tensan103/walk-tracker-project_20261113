@@ -9,9 +9,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'devices', label: 'デバイス管理' },
 ];
 
-// API Gateway のベース情報 (参照用) — 2026-11-19 再デプロイ後
-// BackendStack.ApiUrl      = https://hv9doulbs3.execute-api.ap-northeast-1.amazonaws.com/prod/
-// BackendStack.CloudFrontUrl = https://d372yn7ynb2z78.cloudfront.net
+// API Gateway のベース URL は admin-web-viewer/.env.local の VITE_API_URL で設定してください。
 
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>('events');

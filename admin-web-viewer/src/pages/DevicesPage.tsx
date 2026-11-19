@@ -11,7 +11,8 @@ type Device = {
 type NewForm = { deviceId: string; userName: string; deviceModel: string };
 type EditForm = { userName: string; deviceModel: string };
 
-const BASE = 'https://hv9doulbs3.execute-api.ap-northeast-1.amazonaws.com/prod';
+const BASE = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
+if (!BASE) console.warn('[DevicesPage] VITE_API_URL is not set. Copy .env.example to .env.local.');
 const DEVICES_URL = `${BASE}/devices`;
 
 export function DevicesPage() {

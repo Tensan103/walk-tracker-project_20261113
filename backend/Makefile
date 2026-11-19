@@ -15,7 +15,10 @@
 #      make test-get API_URL=https://xxx.../prod  # URLを都度指定して実行
 # ==============================================================================
 
-# デフォルト設定（環境変数 API_URL があればそちらを優先）
+# .env ファイルがあれば読み込む（API_URL / DEVICE_ID を定義できる）
+-include .env
+
+# デフォルト設定（.env または環境変数 API_URL があればそちらを優先）
 API_URL   ?= https://xxxxxxxxxx.execute-api.ap-northeast-3.amazonaws.com/prod
 DEVICE_ID ?= test-device-001
 CATEGORY  ?= DETECT
@@ -67,3 +70,16 @@ test-e2e: check-url ## POST (DETECT) → 1秒待機 → GET の一連の疎通�
 	@echo ""
 	@sleep 1
 	@$(MAKE) --no-print-directory test-get API_URL=$(API_URL)
+
+
+STACK_NAME ?= BackendStack
+OUTPUT_KEY ?= ApiUrl
+
+.PHONY: sync-env deploy
+
+sync-env: ## CloudFormation の CfnOutput から各 .env / local.properties へ API_URL を同期
+	@./scripts/sync-env.sh $(STACK_NAME) $(OUTPUT_KEY)
+
+deploy: ## backend を CDK デプロイし、続けて環境変数ファイルを自動同期
+	@cd backend && npx cdk deploy --require-approval never
+	@$(MAKE) --no-print-directory sync-env
