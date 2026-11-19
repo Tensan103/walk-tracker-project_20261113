@@ -78,11 +78,44 @@ OkHttp POST ──────→  API Gateway /events (POST)
 
 ## Key Configuration Points
 
-- **API URL**: Hardcoded in two places after CDK deploy — update both when the stack is redeployed:
-  - `android-app/.../MainActivity.kt` → `awsApiUrl` variable (line ~104)
-  - `admin-web-viewer/src/App.tsx` → `API_URL` constant (line ~14)
-- **Device ID**: Currently hardcoded as `"pixel-7a-test"` in `MainActivity.kt` (line ~325).
+- **API URL & Device ID**: Stored in env files — never hardcoded in source. After CDK redeploy, run `./scripts/sync-env.sh` from the project root to auto-update all three env files. See **Environment Variables** section below.
 - **Walking detection parameters**: `T_SEC = 5` (window), `S_STEPS = 3` (threshold) in `SensorLoggerScreen()`.
+
+## Environment Variables
+
+API_URL などの環境依存変数はソースコードにハードコードせず、以下のファイルで管理する。
+
+### ファイル対応表
+
+| ファイル（実値・git除外） | テンプレート（git管理） | 変数名 | 参照箇所 |
+|---|---|---|---|
+| `backend/.env` | `backend/.env.example` | `API_URL`, `DEVICE_ID` | `backend/Makefile` テスト用 |
+| `admin-web-viewer/.env.local` | `admin-web-viewer/.env.example` | `VITE_API_URL` | `import.meta.env.VITE_API_URL` |
+| `android-app/local.properties` | `android-app/local.properties.example` | `API_URL`, `DEVICE_ID` | `BuildConfig.API_URL`, `BuildConfig.DEVICE_ID` |
+
+### Git ルール
+
+- 実値ファイル（`.env`, `.env.local`, `local.properties`）は **絶対にコミットしない**。各 `.gitignore` と root `.gitignore` で除外済み。
+- `.example` ファイル（ダミー値入り）はGit管理対象。変数を追加したら対応する `.example` も更新すること。
+
+### 同期ワークフロー
+
+CDK デプロイ後は `./scripts/sync-env.sh` を**プロジェクトルートから**実行すると、CloudFormation の `ApiUrl` 出力を取得して3ファイルを一括更新する。
+
+```bash
+# 方法A: スクリプトを直接実行（プロジェクトルートから）
+./scripts/sync-env.sh [STACK_NAME] [OUTPUT_KEY]
+# デフォルト: BackendStack, ApiUrl
+
+# 方法B: make ターゲット経由（プロジェクトルートから）
+make -f backend/Makefile sync-env   # 同期のみ
+make -f backend/Makefile deploy     # CDK deploy + 同期を一括実行
+```
+
+> **新しい環境変数を追加するときの手順**:
+> 1. `scripts/sync-env.sh` の `upsert_env` 呼び出しに追加
+> 2. 対応する `.example` ファイルにキーとダミー値を追記
+> 3. Android の場合は `app/build.gradle.kts` の `buildConfigField` にも追加
 
 ## Development Workflow
 
