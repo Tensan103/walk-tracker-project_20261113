@@ -1,6 +1,14 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+}
+
+// local.properties から API_URL / DEVICE_ID を読み込む（ファイルがなければ空文字でフォールバック）
+val localProps = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) load(f.inputStream())
 }
 
 android {
@@ -17,6 +25,14 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        val apiUrl = localProps.getProperty("API_URL") ?: ""
+        val deviceId = localProps.getProperty("DEVICE_ID") ?: "pixel-7a-test"
+        if (apiUrl.isEmpty()) {
+            println("WARNING: API_URL is not set in local.properties. API calls will fail.")
+        }
+        buildConfigField("String", "API_URL", "\"$apiUrl\"")
+        buildConfigField("String", "DEVICE_ID", "\"$deviceId\"")
     }
 
     buildTypes {
@@ -32,6 +48,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

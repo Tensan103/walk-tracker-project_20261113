@@ -82,7 +82,7 @@ class SensorTrackingService : Service() {
     // SYSTEM_ALERT_WINDOW オーバーレイ View の参照 (表示中は非 null)
     private var overlayView: android.view.View? = null
 
-    private val awsApiUrl = "https://hv9doulbs3.execute-api.ap-northeast-1.amazonaws.com/prod/events"
+    private val awsApiUrl = BuildConfig.API_URL
 
     companion object {
         private const val TAG = "SensorTrackingService"
@@ -516,7 +516,7 @@ class SensorTrackingService : Service() {
         withContext(Dispatchers.IO) {
             try {
                 val body = JSONObject().apply {
-                    put("deviceId", "pixel-7a-test")
+                    put("deviceId", BuildConfig.DEVICE_ID)
                     put("category", category)
                     put("timestamp", System.currentTimeMillis())
                 }.toString().toRequestBody("application/json".toMediaType())

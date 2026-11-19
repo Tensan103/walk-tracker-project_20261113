@@ -1,0 +1,8 @@
+# Walk Tracker API — copy this file to local.properties and fill in real values
+# local.properties is git-ignored; this .example file is tracked instead.
+
+# API Gateway endpoint (including /events path)
+API_URL=https://your-api-id.execute-api.ap-northeast-1.amazonaws.com/prod/events
+
+# Device identifier sent with each walk event
+DEVICE_ID=pixel-7a-test

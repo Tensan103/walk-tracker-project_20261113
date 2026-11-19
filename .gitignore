@@ -1,0 +1,8 @@
+# Local environment variables (real URLs / secrets) — git-ignored project-wide
+.env
+.env.local
+*.env.local
+
+# macOS / Windows
+.DS_Store
+Thumbs.db

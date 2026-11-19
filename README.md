@@ -24,6 +24,26 @@ walk-tracker-project_20261123/
 
 
 
+## ⚙️ 初回セットアップ — 環境変数の設定
+
+CDKデプロイ後に出力される `ApiUrl` を、各コンポーネントの環境変数ファイルに設定してください。
+実URLを含むファイルは `.gitignore` で除外されています。`.example` ファイルをコピーして作成してください。
+
+```bash
+# 1. 管理画面 (React / Vite)
+cp admin-web-viewer/.env.example admin-web-viewer/.env.local
+# .env.local を開き VITE_API_URL を設定する
+
+# 2. Android アプリ
+cp android-app/local.properties.example android-app/local.properties
+# local.properties を開き API_URL と DEVICE_ID を設定する
+# ※ local.properties は Android Studio が自動管理するため sdk.dir も維持すること
+
+# 3. バックエンド Makefile テスト用
+cp backend/.env.example backend/.env
+# .env を開き API_URL を設定する
+```
+
 ## 🚀 デプロイと実行手順
 
 ### 1. バックエンド (AWS CDK)

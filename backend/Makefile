@@ -15,7 +15,10 @@
 #      make test-get API_URL=https://xxx.../prod  # URLを都度指定して実行
 # ==============================================================================
 
-# デフォルト設定（環境変数 API_URL があればそちらを優先）
+# .env ファイルがあれば読み込む（API_URL / DEVICE_ID を定義できる）
+-include .env
+
+# デフォルト設定（.env または環境変数 API_URL があればそちらを優先）
 API_URL   ?= https://xxxxxxxxxx.execute-api.ap-northeast-3.amazonaws.com/prod
 DEVICE_ID ?= test-device-001
 CATEGORY  ?= DETECT
