@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings as AndroidSettings
 import android.util.Log
 import android.widget.Toast
@@ -49,6 +50,8 @@ object SettingsRepository {
     private const val KEY_T_SEC = "t_sec"
     private const val KEY_S_STEPS = "s_steps"
     private const val KEY_R_SEC = "r_sec"
+    private const val KEY_ALERT_TYPE = "alert_type"
+    private const val KEY_MONITORING_ENABLED = "monitoring_enabled"
 
     const val DEFAULT_T_SEC = 5
     const val DEFAULT_S_STEPS = 3
@@ -77,6 +80,28 @@ object SettingsRepository {
             .putInt(KEY_T_SEC, tSec)
             .putInt(KEY_S_STEPS, sSteps)
             .putInt(KEY_R_SEC, rSec)
+            .apply()
+    }
+
+    fun getAlertType(context: Context): AlertType {
+        val name = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_ALERT_TYPE, AlertType.NONE.name) ?: AlertType.NONE.name
+        return try { AlertType.valueOf(name) } catch (_: IllegalArgumentException) { AlertType.NONE }
+    }
+
+    fun saveAlertType(context: Context, type: AlertType) {
+        context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE).edit()
+            .putString(KEY_ALERT_TYPE, type.name)
+            .apply()
+    }
+
+    fun getMonitoringEnabled(context: Context): Boolean =
+        context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_MONITORING_ENABLED, true)
+
+    fun saveMonitoringEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_MONITORING_ENABLED, enabled)
             .apply()
     }
 }
@@ -137,6 +162,25 @@ class MainActivity : ComponentActivity() {
                 ) {
                     MainApp()
                 }
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        val powerManager = getSystemService(PowerManager::class.java)
+        if (SensorStateRepository.isMonitoringEnabled.value &&
+            powerManager.isInteractive &&
+            !SensorStateRepository.isServiceRunning.value
+        ) {
+            Log.d("MainActivity", "onResume: サービス未起動を検出、再起動します")
+            val intent = Intent(this, SensorTrackingService::class.java).apply {
+                action = SensorTrackingService.ACTION_START
+            }
+            try {
+                ContextCompat.startForegroundService(this, intent)
+            } catch (e: Exception) {
+                Log.e("MainActivity", "onResume: サービス起動失敗: ${e.message}")
             }
         }
     }
@@ -229,6 +273,8 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     val alertType by SensorStateRepository.alertType.collectAsState()
+    val isMonitoringEnabled by SensorStateRepository.isMonitoringEnabled.collectAsState()
+    val isServiceRunning by SensorStateRepository.isServiceRunning.collectAsState()
 
     // 権限確認のために OS 設定画面を起動し、戻ってきたときに再チェックする
     var pendingAlertType by remember { mutableStateOf<AlertType?>(null) }
@@ -245,7 +291,10 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
                 AndroidSettings.canDrawOverlays(context)
             else -> true
         }
-        if (granted) SensorStateRepository.updateAlertType(pending)
+        if (granted) {
+            SensorStateRepository.updateAlertType(pending)
+            SettingsRepository.saveAlertType(context, pending)
+        }
         pendingAlertType = null
     }
 
@@ -265,6 +314,7 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
                     return
                 }
                 SensorStateRepository.updateAlertType(type)
+                SettingsRepository.saveAlertType(context, type)
             }
             AlertType.SYSTEM_ALERT_WINDOW -> {
                 if (!AndroidSettings.canDrawOverlays(context)) {
@@ -277,8 +327,12 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
                     return
                 }
                 SensorStateRepository.updateAlertType(type)
+                SettingsRepository.saveAlertType(context, type)
             }
-            else -> SensorStateRepository.updateAlertType(type)
+            else -> {
+                SensorStateRepository.updateAlertType(type)
+                SettingsRepository.saveAlertType(context, type)
+            }
         }
     }
 
@@ -345,6 +399,48 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                // ── 監視ON/OFFスイッチ (検証用) ─────────────────────
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "監視機能を有効にする（検証用）",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = "現在: ${if (isServiceRunning) "稼働中" else "待機中"}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (isServiceRunning)
+                                MaterialTheme.colorScheme.primary
+                            else
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = isMonitoringEnabled,
+                        onCheckedChange = { enabled ->
+                            SensorStateRepository.updateMonitoringEnabled(enabled)
+                            SettingsRepository.saveMonitoringEnabled(context, enabled)
+                            if (enabled) {
+                                val intent = Intent(context, SensorTrackingService::class.java).apply {
+                                    action = SensorTrackingService.ACTION_START
+                                }
+                                try {
+                                    ContextCompat.startForegroundService(context, intent)
+                                } catch (e: Exception) {
+                                    Log.e("SettingsScreen", "サービス起動失敗: ${e.message}")
+                                }
+                            } else {
+                                context.stopService(Intent(context, SensorTrackingService::class.java))
+                            }
+                        }
+                    )
+                }
+
+                HorizontalDivider()
+
                 Text(
                     text = "歩行判定パラメータを設定できます。\n" +
                            "T秒間にS歩で「検知」、最後の歩行からR秒後に「解除」します。",

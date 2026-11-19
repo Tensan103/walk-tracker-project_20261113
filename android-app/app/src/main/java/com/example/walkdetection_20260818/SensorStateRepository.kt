@@ -1,5 +1,6 @@
 package com.example.walkdetection_20260818
 
+import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -66,9 +67,13 @@ object SensorStateRepository {
     private val _walkHistory = MutableStateFlow<List<WalkHistoryItem>>(emptyList())
     val walkHistory: StateFlow<List<WalkHistoryItem>> = _walkHistory.asStateFlow()
 
-    // --- 歩行検知時の警告設定 (インメモリのみ、アプリ終了でリセット) ---
+    // --- 歩行検知時の警告設定 ---
     private val _alertType = MutableStateFlow(AlertType.NONE)
     val alertType: StateFlow<AlertType> = _alertType.asStateFlow()
+
+    // --- 監視機能の有効/無効フラグ (初期値 true、SharedPreferences で永続化) ---
+    private val _isMonitoringEnabled = MutableStateFlow(true)
+    val isMonitoringEnabled: StateFlow<Boolean> = _isMonitoringEnabled.asStateFlow()
 
     fun updateAccel(values: FloatArray) {
         _accelValues.value = values.clone()
@@ -100,6 +105,16 @@ object SensorStateRepository {
 
     fun updateAlertType(type: AlertType) {
         _alertType.value = type
+    }
+
+    fun updateMonitoringEnabled(enabled: Boolean) {
+        _isMonitoringEnabled.value = enabled
+    }
+
+    /** Application.onCreate() で呼び出し、SharedPreferences から AlertType と監視フラグを復元する。 */
+    fun init(context: Context) {
+        _alertType.value = SettingsRepository.getAlertType(context)
+        _isMonitoringEnabled.value = SettingsRepository.getMonitoringEnabled(context)
     }
 
     /**
