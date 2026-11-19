@@ -11,8 +11,8 @@ Walk Tracker: a system that detects walking via smartphone sensors (STEP_DETECTO
 This is a hybrid monorepo with three independent sub-projects:
 
 - **`android-app/`** — Native Android app (Kotlin, Jetpack Compose, OkHttp). Single-activity app (`MainActivity.kt`) with all sensor logic and UI in one file. Package: `com.example.walkdetection_20260818`.
-- **`backend/`** — AWS CDK stack (TypeScript). Entry point: `bin/backend.ts` → stack in `lib/backend-stack.ts`. Lambda handlers (plain JS) in `lambda/`. Deploys DynamoDB, two Lambdas (read/write), API Gateway, S3, and CloudFront.
-- **`admin-web-viewer/`** — React dashboard (Vite, TypeScript). Single-page app in `src/App.tsx` that fetches walk events from the API Gateway `/events` endpoint.
+- **`backend/`** — AWS CDK stack (TypeScript). Entry point: `bin/backend.ts` → stack in `lib/backend-stack.ts`. Lambda handlers (plain JS) in `lambda/`. Deploys DynamoDB, three Lambdas (read/write/devices), API Gateway (with Cognito Authorizer + API Key), Cognito User Pool, S3 (OAC), and CloudFront.
+- **`admin-web-viewer/`** — React dashboard (Vite, TypeScript, aws-amplify). Single-page app in `src/App.tsx` with Cognito login, 3-tab navigation (タイムライン/実績/デバイス管理), fetches from API Gateway using Cognito JWT.
 
 ## Environment Constraints
 
@@ -49,36 +49,47 @@ Build and run exclusively from Android Studio on Windows. No CLI commands from W
 ## Architecture & Data Flow
 
 ```
-Android App                    AWS                              React Dashboard
-───────────                    ───                              ───────────────
+Android App (Foreground Svc)         AWS                              React Dashboard
+────────────────────────────         ───                              ───────────────
 STEP_DETECTOR sensor
   ↓
 Sliding window (5s/3 steps)
   ↓
 DETECT/RELEASE event
   ↓
-OkHttp POST ──────→  API Gateway /events (POST)
-                        ↓
-                      WriteLambda → DynamoDB
-                                    (PK: deviceId, SK: timestamp)
-                      ReadLambda  ← DynamoDB (Scan, sorted desc)
-                        ↑
-                      API Gateway /events (GET) ←──── fetch()
-                                                        ↓
-                                                      Event table (JST)
+OkHttp POST ──x-api-key──→  API Gateway /events (POST)
+                               ↓ API Key 検証
+                             WriteEventLambda → WalkEventsTable
+                                                (PK: deviceId, SK: timestamp)
+                             ReadEventLambda  ← WalkEventsTable + DevicesTable
+                               ↑ Cognito JWT 検証
+                             API Gateway /events (GET) ←──── authFetch()
+                             API Gateway /devices (CRUD) ←──── authFetch()
+                                                                   ↓
+                                                      Cognito User Pool (login)
+                                                      タイムライン/実績/デバイス管理
 ```
 
-**DynamoDB schema**: Partition key `deviceId` (String), sort key `timestamp` (Number). Each item has a `category` field (`"DETECT"` or `"RELEASE"`).
+**DynamoDB schema**:
+- `WalkEventsTable`: PK `deviceId` (String), SK `timestamp` (Number). Attribute: `category` (`"DETECT"` or `"RELEASE"`).
+- `DevicesTable`: PK `deviceId` (String). Attributes: `userName`, `deviceModel`, `status`, `createdAt`.
 
-**Lambda handlers** (`backend/lambda/`): Plain Node.js 18.x using `@aws-sdk/client-dynamodb` v3. Both `read.js` and `write.js` use DynamoDB Document Client. Read currently uses Scan (full-table) — intentionally simple for the prototype phase.
+**Lambda handlers** (`backend/lambda/`): Plain Node.js 22.x using `@aws-sdk/client-dynamodb` v3 Document Client.
+- `write.js` — POST /events (API Key protected)
+- `read.js` — GET /events (Cognito JWT protected, joins DevicesTable)
+- `devicesApi.js` — CRUD /devices (Cognito JWT protected)
 
-**API Gateway**: REST API with CORS open to all origins. Single resource `/events` with POST (write) and GET (read).
+**API Gateway**: REST API with CORS open to all origins. Resources: `/events` (POST/GET), `/devices` (GET/POST/PUT), `/devices/{deviceId}` (DELETE). POST /events requires API Key (`x-api-key`); all admin endpoints require Cognito JWT (`Authorization: Bearer`). GatewayResponse DEFAULT_4XX/5XX adds CORS headers on auth errors.
 
-**Static hosting**: S3 bucket + CloudFront distribution for the React app. Bucket has `DESTROY` removal policy (test environment).
+**Authentication split**:
+- Android → `x-api-key` header + UsagePlan (rate/burst/monthly quota)
+- Admin web → Cognito User Pool (`selfSignUpEnabled: false`), `aws-amplify` v6, JWT sent as `Authorization: Bearer`
+
+**Static hosting**: Private S3 bucket + CloudFront with OAC (`S3BucketOrigin.withOriginAccessControl()`). `REDIRECT_TO_HTTPS`. SPA error responses: 403/404 → `/index.html` 200.
 
 ## Key Configuration Points
 
-- **API URL & Device ID**: Stored in env files — never hardcoded in source. After CDK redeploy, run `./scripts/sync-env.sh` from the project root to auto-update all three env files. See **Environment Variables** section below.
+- **API URL & secrets**: Stored in env files — never hardcoded in source. After CDK redeploy, run `make sync-env` from the project root to auto-update all env files. See **Environment Variables** section below.
 - **Walking detection parameters**: `T_SEC = 5` (window), `S_STEPS = 3` (threshold) in `SensorLoggerScreen()`.
 
 ## Environment Variables
@@ -89,9 +100,9 @@ API_URL などの環境依存変数はソースコードにハードコードせ
 
 | ファイル（実値・git除外） | テンプレート（git管理） | 変数名 | 参照箇所 |
 |---|---|---|---|
-| `backend/.env` | `backend/.env.example` | `API_URL`, `DEVICE_ID` | `backend/Makefile` テスト用 |
-| `admin-web-viewer/.env.local` | `admin-web-viewer/.env.example` | `VITE_API_URL` | `import.meta.env.VITE_API_URL` |
-| `android-app/local.properties` | `android-app/local.properties.example` | `API_URL`, `DEVICE_ID` | `BuildConfig.API_URL`, `BuildConfig.DEVICE_ID` |
+| `.env`（プロジェクトルート） | `.env.example` | `API_URL`, `API_KEY`, `USER_POOL_ID`, `USER_POOL_CLIENT_ID`, `WEB_BUCKET_NAME`, `CLOUDFRONT_DISTRIBUTION_ID`, `WEB_URL` | `Makefile` (deploy-web用), `backend/Makefile` テスト用 |
+| `admin-web-viewer/.env.local` | `admin-web-viewer/.env.example` | `VITE_API_URL`, `VITE_USER_POOL_ID`, `VITE_USER_POOL_CLIENT_ID` | `import.meta.env.*` |
+| `android-app/local.properties` | `android-app/local.properties.example` | `API_URL`, `DEVICE_ID`, `API_KEY` | `BuildConfig.API_URL`, `BuildConfig.DEVICE_ID`, `BuildConfig.API_KEY` |
 
 ### Git ルール
 
@@ -100,16 +111,13 @@ API_URL などの環境依存変数はソースコードにハードコードせ
 
 ### 同期ワークフロー
 
-CDK デプロイ後は `./scripts/sync-env.sh` を**プロジェクトルートから**実行すると、CloudFormation の `ApiUrl` 出力を取得して3ファイルを一括更新する。
+CDK デプロイ後は**プロジェクトルートの `Makefile`** のターゲットを使用する。`scripts/sync-env.sh` が CloudFormation Outputs を python3 で一括取得し、API Key 実値も解決して3ファイルを更新する。
 
 ```bash
-# 方法A: スクリプトを直接実行（プロジェクトルートから）
-./scripts/sync-env.sh [STACK_NAME] [OUTPUT_KEY]
-# デフォルト: BackendStack, ApiUrl
-
-# 方法B: make ターゲット経由（プロジェクトルートから）
-make -f backend/Makefile sync-env   # 同期のみ
-make -f backend/Makefile deploy     # CDK deploy + 同期を一括実行
+# プロジェクトルートから実行
+make sync-env         # 同期のみ（CloudFormation → .env / .env.local / local.properties）
+make deploy           # CDK deploy + sync-env を一括実行
+make deploy-web       # sync-env → React build → S3 sync → CloudFront invalidation
 ```
 
 > **新しい環境変数を追加するときの手順**:
@@ -124,6 +132,11 @@ When implementing a feature that spans the stack:
 2. Update the React frontend to match API changes.
 3. Update the Android Kotlin code last (user builds it in Android Studio).
 
+**Documentation sync**: After every feature addition or change, update these three files to reflect the new state:
+- `docs/specification.md` — human-readable spec (功能要件/設計/TODO)
+- `docs/architecture.drawio` — system architecture diagram
+- `docs/walk-tracker-process.bpmn` — business process flow diagram
+
 ## Tech Stack Rules
 
 - **Android**: Kotlin coroutines for async. Jetpack Compose only (no XML layouts). OkHttp for networking.
@@ -132,8 +145,8 @@ When implementing a feature that spans the stack:
 
 ## Planned Roadmap (from `docs/project_history.md`)
 
-1. **[High]** Android Foreground Service — keep sensors and API calls alive when screen is off.
-2. **[Medium]** Amazon Cognito auth — secure API Gateway, add login to the React dashboard.
+1. **[Done]** Android Foreground Service — sensors and API calls stay alive when screen is off.
+2. **[Done]** Amazon Cognito auth — API Gateway secured; Cognito login added to React dashboard.
 3. **[Low]** DynamoDB schema optimization — GSI for time-range queries, device-to-user mapping.
 
 ## Files and Directories to Ignore
@@ -187,6 +200,10 @@ Unless explicitly requested by the user, do not inspect, search, index, or analy
 - **/.cache/**
 - **/.tmp/**
 - **/tmp/**
+
+### Work notes (non-source)
+
+- **memo/**
 
 ### Lock files
 
