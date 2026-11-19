@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { EventsPage } from './pages/EventsPage';
+import { StatsScreen } from './pages/StatsScreen';
 import { DevicesPage } from './pages/DevicesPage';
 
-type Tab = 'events' | 'devices';
+type Tab = 'events' | 'stats' | 'devices';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'events',  label: 'タイムライン' },
+  { id: 'stats',   label: '実績' },
   { id: 'devices', label: 'デバイス管理' },
 ];
 
@@ -46,6 +48,7 @@ function App() {
 
       {/* ページコンテンツ */}
       {activeTab === 'events'  && <EventsPage />}
+      {activeTab === 'stats'   && <StatsScreen />}
       {activeTab === 'devices' && <DevicesPage />}
     </div>
   );
