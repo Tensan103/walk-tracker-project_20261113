@@ -62,16 +62,23 @@ upsert_env() {
 }
 
 # 各ファイルへ反映
-upsert_env ".env"                          "API_URL"               "${API_URL}"
-[[ -n "${API_KEY}" ]]            && upsert_env ".env"              "API_KEY"               "${API_KEY}"
-[[ -n "${USER_POOL_ID}" ]]       && upsert_env ".env"              "USER_POOL_ID"          "${USER_POOL_ID}"
-[[ -n "${USER_POOL_CLIENT_ID}" ]] && upsert_env ".env"             "USER_POOL_CLIENT_ID"   "${USER_POOL_CLIENT_ID}"
+WEB_BUCKET_NAME=$(get_output "WebBucketName")
+CLOUDFRONT_DISTRIBUTION_ID=$(get_output "CloudFrontDistributionId")
+WEB_URL=$(get_output "WebUrl")
 
-upsert_env "admin-web-viewer/.env.local"   "VITE_API_URL"          "${API_URL}"
-[[ -n "${USER_POOL_ID}" ]]       && upsert_env "admin-web-viewer/.env.local" "VITE_USER_POOL_ID"     "${USER_POOL_ID}"
-[[ -n "${USER_POOL_CLIENT_ID}" ]] && upsert_env "admin-web-viewer/.env.local" "VITE_USER_POOL_CLIENT_ID" "${USER_POOL_CLIENT_ID}"
+upsert_env ".env"                          "API_URL"                      "${API_URL}"
+[[ -n "${API_KEY}" ]]                     && upsert_env ".env" "API_KEY"                      "${API_KEY}"
+[[ -n "${USER_POOL_ID}" ]]                && upsert_env ".env" "USER_POOL_ID"                 "${USER_POOL_ID}"
+[[ -n "${USER_POOL_CLIENT_ID}" ]]         && upsert_env ".env" "USER_POOL_CLIENT_ID"          "${USER_POOL_CLIENT_ID}"
+[[ -n "${WEB_BUCKET_NAME}" ]]             && upsert_env ".env" "WEB_BUCKET_NAME"              "${WEB_BUCKET_NAME}"
+[[ -n "${CLOUDFRONT_DISTRIBUTION_ID}" ]] && upsert_env ".env" "CLOUDFRONT_DISTRIBUTION_ID"   "${CLOUDFRONT_DISTRIBUTION_ID}"
+[[ -n "${WEB_URL}" ]]                     && upsert_env ".env" "WEB_URL"                      "${WEB_URL}"
 
-upsert_env "android-app/local.properties"  "API_URL"               "${API_URL}"
-[[ -n "${API_KEY}" ]]            && upsert_env "android-app/local.properties" "API_KEY"               "${API_KEY}"
+upsert_env "admin-web-viewer/.env.local"   "VITE_API_URL"                 "${API_URL}"
+[[ -n "${USER_POOL_ID}" ]]       && upsert_env "admin-web-viewer/.env.local" "VITE_USER_POOL_ID"           "${USER_POOL_ID}"
+[[ -n "${USER_POOL_CLIENT_ID}" ]] && upsert_env "admin-web-viewer/.env.local" "VITE_USER_POOL_CLIENT_ID"   "${USER_POOL_CLIENT_ID}"
+
+upsert_env "android-app/local.properties"  "API_URL"                      "${API_URL}"
+[[ -n "${API_KEY}" ]]            && upsert_env "android-app/local.properties" "API_KEY"                    "${API_KEY}"
 
 echo ">>> すべての環境変数ファイルの同期が完了しました。"

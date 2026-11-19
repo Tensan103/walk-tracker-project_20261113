@@ -159,22 +159,38 @@ export class BackendStack extends cdk.Stack {
     });
 
     // 10. S3 + CloudFront（Reactアプリ静的ホスティング）
-    const websiteBucket = new s3.Bucket(this, 'ViewerAppBucket', {
+    const webBucket = new s3.Bucket(this, 'ViewerAppBucket', {
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
     });
     const distribution = new cloudfront.Distribution(this, 'ViewerDistribution', {
       defaultBehavior: {
-        origin: new origins.S3Origin(websiteBucket),
+        origin: origins.S3BucketOrigin.withOriginAccessControl(webBucket),
+        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
       },
       defaultRootObject: 'index.html',
+      errorResponses: [
+        {
+          httpStatus: 403,
+          responseHttpStatus: 200,
+          responsePagePath: '/index.html',
+        },
+        {
+          httpStatus: 404,
+          responseHttpStatus: 200,
+          responsePagePath: '/index.html',
+        },
+      ],
     });
 
     // 11. CfnOutput
     new cdk.CfnOutput(this, 'ApiUrl', { value: api.url });
-    new cdk.CfnOutput(this, 'CloudFrontUrl', { value: `https://${distribution.distributionDomainName}` });
     new cdk.CfnOutput(this, 'UserPoolId', { value: userPool.userPoolId });
     new cdk.CfnOutput(this, 'UserPoolClientId', { value: userPoolClient.userPoolClientId });
     new cdk.CfnOutput(this, 'ApiKeyId', { value: apiKey.keyId });
+    new cdk.CfnOutput(this, 'WebBucketName', { value: webBucket.bucketName });
+    new cdk.CfnOutput(this, 'CloudFrontDistributionId', { value: distribution.distributionId });
+    new cdk.CfnOutput(this, 'WebUrl', { value: `https://${distribution.distributionDomainName}` });
   }
 }
