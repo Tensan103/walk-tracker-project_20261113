@@ -1,5 +1,6 @@
 import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
+import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
@@ -11,7 +12,7 @@ export class BackendStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    // 1. DynamoDBテーブル (テスト用なのでリソース削除時にテーブルも削除)
+    // 1. DynamoDB: 歩行イベントテーブル
     const table = new dynamodb.Table(this, 'WalkEventsTable', {
       partitionKey: { name: 'deviceId', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'timestamp', type: dynamodb.AttributeType.NUMBER },
@@ -23,12 +24,12 @@ export class BackendStack extends cdk.Stack {
     const writeLambda = new lambda.Function(this, 'WriteEventLambda', {
       runtime: lambda.Runtime.NODEJS_22_X,
       handler: 'write.handler',
-      code: lambda.Code.fromAsset('lambda'), // lambdaディレクトリにコードを配置
+      code: lambda.Code.fromAsset('lambda'),
       environment: { TABLE_NAME: table.tableName },
     });
     table.grantWriteData(writeLambda);
 
-    // 3. Lambda: データ読み込み用 (ビューワー向け)
+    // 3. Lambda: データ読み込み用
     const readLambda = new lambda.Function(this, 'ReadEventLambda', {
       runtime: lambda.Runtime.NODEJS_22_X,
       handler: 'read.handler',
@@ -37,29 +38,14 @@ export class BackendStack extends cdk.Stack {
     });
     table.grantReadData(readLambda);
 
-    // 4. API Gateway (CORS許可: Reactから叩けるようにする)
-    const api = new apigateway.RestApi(this, 'WalkEventsApi', {
-      defaultCorsPreflightOptions: {
-        allowOrigins: apigateway.Cors.ALL_ORIGINS,
-        allowMethods: apigateway.Cors.ALL_METHODS,
-        // Content-Type など必要ヘッダーを明示することで POST/PUT のプリフライトを通す
-        allowHeaders: apigateway.Cors.DEFAULT_HEADERS,
-      },
-    });
-
-    // /events エンドポイント
-    const events = api.root.addResource('events');
-    events.addMethod('POST', new apigateway.LambdaIntegration(writeLambda));
-    events.addMethod('GET', new apigateway.LambdaIntegration(readLambda));
-
-    // 5. DevicesTable (端末情報と所有者の統合管理)
+    // 4. DynamoDB: デバイステーブル
     const devicesTable = new dynamodb.Table(this, 'DevicesTable', {
       partitionKey: { name: 'deviceId', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    // 6. devicesApi Lambda (CRUD)
+    // 5. Lambda: Devices CRUD
     const devicesApiLambda = new lambda.Function(this, 'DevicesApiLambda', {
       runtime: lambda.Runtime.NODEJS_22_X,
       handler: 'devicesApi.handler',
@@ -67,34 +53,128 @@ export class BackendStack extends cdk.Stack {
       environment: { TABLE_NAME: devicesTable.tableName },
     });
     devicesTable.grantReadWriteData(devicesApiLambda);
-
-    // readLambda に DevicesTable の読み取り権限と環境変数を追加
     devicesTable.grantReadData(readLambda);
     readLambda.addEnvironment('DEVICES_TABLE_NAME', devicesTable.tableName);
 
-    // /devices エンドポイント (GET, POST, PUT)
-    const devices = api.root.addResource('devices');
-    devices.addMethod('GET',  new apigateway.LambdaIntegration(devicesApiLambda));
-    devices.addMethod('POST', new apigateway.LambdaIntegration(devicesApiLambda));
-    devices.addMethod('PUT',  new apigateway.LambdaIntegration(devicesApiLambda));
-    // /devices/{deviceId} (DELETE)
-    const deviceWithId = devices.addResource('{deviceId}');
-    deviceWithId.addMethod('DELETE', new apigateway.LambdaIntegration(devicesApiLambda));
+    // 6. Cognito User Pool（管理画面用）
+    const userPool = new cognito.UserPool(this, 'AdminUserPool', {
+      selfSignUpEnabled: false,
+      signInAliases: { email: true },
+      passwordPolicy: {
+        minLength: 8,
+        requireUppercase: true,
+        requireLowercase: true,
+        requireDigits: true,
+        requireSymbols: false,
+      },
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
 
-    // 7. 閲覧用Reactアプリを配置するS3とCloudFront
+    const userPoolClient = userPool.addClient('AdminWebClient', {
+      generateSecret: false,
+      authFlows: { userSrp: true, userPassword: true },
+    });
+
+    const cognitoAuthorizer = new apigateway.CognitoUserPoolsAuthorizer(this, 'CognitoAuthorizer', {
+      cognitoUserPools: [userPool],
+    });
+
+    // 7. API Gateway
+    const api = new apigateway.RestApi(this, 'WalkEventsApi', {
+      defaultCorsPreflightOptions: {
+        allowOrigins: apigateway.Cors.ALL_ORIGINS,
+        allowMethods: apigateway.Cors.ALL_METHODS,
+        allowHeaders: [
+          ...apigateway.Cors.DEFAULT_HEADERS,
+          'Authorization',
+          'x-api-key',
+        ],
+      },
+    });
+
+    // 認証エラー(401/403)でもCORSヘッダーが返るようにゲートウェイレスポンスを設定
+    api.addGatewayResponse('Default4xxResponse', {
+      type: apigateway.ResponseType.DEFAULT_4XX,
+      responseHeaders: { 'Access-Control-Allow-Origin': "'*'" },
+    });
+    api.addGatewayResponse('Default5xxResponse', {
+      type: apigateway.ResponseType.DEFAULT_5XX,
+      responseHeaders: { 'Access-Control-Allow-Origin': "'*'" },
+    });
+
+    // 8. API Key + Usage Plan（Android用 POST /events）
+    const apiKey = api.addApiKey('AndroidApiKey', {
+      apiKeyName: 'WalkTrackerAndroidKey',
+    });
+    const usagePlan = api.addUsagePlan('AndroidUsagePlan', {
+      name: 'WalkTrackerAndroidPlan',
+      throttle: { rateLimit: 10, burstLimit: 20 },
+      quota: {
+        limit: 10000,
+        period: apigateway.Period.MONTH,
+      },
+    });
+    usagePlan.addApiStage({ stage: api.deploymentStage });
+    usagePlan.addApiKey(apiKey);
+
+    // 9. エンドポイント定義
+    const events = api.root.addResource('events');
+
+    // POST /events: APIキー必須（Androidアプリ用）
+    events.addMethod('POST', new apigateway.LambdaIntegration(writeLambda), {
+      apiKeyRequired: true,
+    });
+
+    // GET /events: Cognito認証必須（管理画面用）
+    events.addMethod('GET', new apigateway.LambdaIntegration(readLambda), {
+      authorizer: cognitoAuthorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    });
+
+    const devices = api.root.addResource('devices');
+
+    // GET /devices: Cognito認証必須
+    devices.addMethod('GET', new apigateway.LambdaIntegration(devicesApiLambda), {
+      authorizer: cognitoAuthorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    });
+
+    // POST /devices: Cognito認証必須
+    devices.addMethod('POST', new apigateway.LambdaIntegration(devicesApiLambda), {
+      authorizer: cognitoAuthorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    });
+
+    // PUT /devices: Cognito認証必須
+    devices.addMethod('PUT', new apigateway.LambdaIntegration(devicesApiLambda), {
+      authorizer: cognitoAuthorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    });
+
+    // DELETE /devices/{deviceId}: Cognito認証必須
+    const deviceWithId = devices.addResource('{deviceId}');
+    deviceWithId.addMethod('DELETE', new apigateway.LambdaIntegration(devicesApiLambda), {
+      authorizer: cognitoAuthorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    });
+
+    // 10. S3 + CloudFront（Reactアプリ静的ホスティング）
     const websiteBucket = new s3.Bucket(this, 'ViewerAppBucket', {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
     });
     const distribution = new cloudfront.Distribution(this, 'ViewerDistribution', {
       defaultBehavior: {
-        origin: new origins.S3Origin(websiteBucket)
+        origin: new origins.S3Origin(websiteBucket),
       },
       defaultRootObject: 'index.html',
     });
 
-    // --- デプロイ結果の出力 ---
+    // 11. CfnOutput
     new cdk.CfnOutput(this, 'ApiUrl', { value: api.url });
     new cdk.CfnOutput(this, 'CloudFrontUrl', { value: `https://${distribution.distributionDomainName}` });
+    new cdk.CfnOutput(this, 'UserPoolId', { value: userPool.userPoolId });
+    new cdk.CfnOutput(this, 'UserPoolClientId', { value: userPoolClient.userPoolClientId });
+    new cdk.CfnOutput(this, 'ApiKeyId', { value: apiKey.keyId });
   }
 }
