@@ -12,7 +12,7 @@ const _base = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
 if (!_base) console.warn('[EventsPage] VITE_API_URL is not set. Copy .env.example to .env.local.');
 const EVENTS_URL = `${_base}/events`;
 
-type SortKey = 'detectTimestamp' | 'deviceModel' | 'userName';
+type SortKey = 'detectTimestamp' | 'durationMs' | 'deviceModel' | 'userName';
 type SortDir = 'asc' | 'desc';
 
 const PAGE_SIZE = 20;
@@ -68,6 +68,7 @@ export function EventsPage() {
   const sorted = useMemo(() => [...filtered].sort((a, b) => {
     const dir = sortDir === 'asc' ? 1 : -1;
     if (sortKey === 'detectTimestamp') return dir * (a.detectTimestamp - b.detectTimestamp);
+    if (sortKey === 'durationMs') return compareNullable(a.durationMs, b.durationMs, (x, y) => dir * (x - y));
     if (sortKey === 'deviceModel') {
       const aVal = a.deviceModel === '-' ? null : a.deviceModel;
       const bVal = b.deviceModel === '-' ? null : b.deviceModel;
@@ -143,7 +144,9 @@ export function EventsPage() {
               検知日時 (JST){sortIndicator('detectTimestamp')}
             </th>
             <th style={thStyle}>解除日時 (JST)</th>
-            <th style={thStyle}>時間</th>
+            <th style={{ ...thStyle, cursor: 'pointer' }} onClick={() => handleSort('durationMs')}>
+              時間{sortIndicator('durationMs')}
+            </th>
             <th style={{ ...thStyle, cursor: 'pointer' }} onClick={() => handleSort('deviceModel')}>
               デバイス名{sortIndicator('deviceModel')}
             </th>
