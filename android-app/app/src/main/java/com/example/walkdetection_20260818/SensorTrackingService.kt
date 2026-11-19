@@ -83,6 +83,7 @@ class SensorTrackingService : Service() {
     private var overlayView: android.view.View? = null
 
     private val awsApiUrl = BuildConfig.API_URL
+    private val awsApiKey = BuildConfig.API_KEY
 
     companion object {
         private const val TAG = "SensorTrackingService"
@@ -521,9 +522,13 @@ class SensorTrackingService : Service() {
                     put("timestamp", System.currentTimeMillis())
                 }.toString().toRequestBody("application/json".toMediaType())
 
+                if (awsApiKey.isEmpty()) {
+                    Log.w(TAG, "API_KEY is not set. POST /events will return 403. Run sync-env.sh and rebuild.")
+                }
                 val request = Request.Builder()
                     .url(awsApiUrl)
                     .post(body)
+                    .header("x-api-key", awsApiKey)
                     .build()
 
                 okHttpClient.newCall(request).execute().use { response ->

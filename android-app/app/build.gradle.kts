@@ -28,11 +28,16 @@ android {
 
         val apiUrl = localProps.getProperty("API_URL") ?: ""
         val deviceId = localProps.getProperty("DEVICE_ID") ?: "pixel-7a-test"
+        val apiKey = localProps.getProperty("API_KEY") ?: ""
         if (apiUrl.isEmpty()) {
             println("WARNING: API_URL is not set in local.properties. API calls will fail.")
         }
+        if (apiKey.isEmpty()) {
+            println("WARNING: API_KEY is not set in local.properties. POST /events will return 403.")
+        }
         buildConfigField("String", "API_URL", "\"$apiUrl\"")
         buildConfigField("String", "DEVICE_ID", "\"$deviceId\"")
+        buildConfigField("String", "API_KEY", "\"$apiKey\"")
     }
 
     buildTypes {
