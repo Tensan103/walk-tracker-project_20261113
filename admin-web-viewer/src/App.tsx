@@ -5,7 +5,7 @@ import { DevicesPage } from './pages/DevicesPage';
 type Tab = 'events' | 'devices';
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'events',  label: '歩行検知ダッシュボード' },
+  { id: 'events',  label: 'タイムライン' },
   { id: 'devices', label: 'デバイス管理' },
 ];
 
